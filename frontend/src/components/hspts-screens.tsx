@@ -62,6 +62,7 @@ import {
   type Trend,
 } from "@/lib/hspts-data";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 const colors = {
   primary: "#F40F2C",
@@ -362,6 +363,7 @@ export function OverviewScreen({
   universityName?: string;
   totalStudents: number;
 }) {
+  const { t } = useI18n();
   const atRiskStudents = getAtRiskStudents();
   const riskChartData = [...riskDistribution];
   const scoreTrendData = [...scoreTrend];
@@ -380,7 +382,7 @@ export function OverviewScreen({
                 className="h-11 rounded-xl bg-[#F40F2C] px-5 text-white shadow-[0_18px_40px_-20px_rgba(244,15,44,0.8)] hover:bg-[#d60d28]"
               >
                 <Link href="/reports">
-                  Generate weekly board report
+                  {t("overview.generateWeekly", "Generate weekly board report")}
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
@@ -389,7 +391,7 @@ export function OverviewScreen({
                 variant="outline"
                 className="h-11 rounded-xl border-[#fecdd3] bg-white text-[#111827] hover:bg-[#fff1f2]"
               >
-                <Link href="/students">Open student list</Link>
+                <Link href="/students">{t("overview.openList", "Open student list")}</Link>
               </Button>
             </>
           }
@@ -729,6 +731,7 @@ export function OverviewScreen({
 }
 
 export function StudentsScreen() {
+  const { t } = useI18n();
   const [cohort, setCohort] = useState("All Cohorts");
   const [track, setTrack] = useState("All Tracks");
   const [riskLevel, setRiskLevel] = useState("All Risk Levels");
@@ -818,7 +821,7 @@ export function StudentsScreen() {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, ID, mentor, or track"
+                placeholder={t("shell.search", "Search student, cohort, mentor, report...")}
                 className="h-12 rounded-xl border-[#e5e7eb] bg-white pl-11 text-[#111827] placeholder:text-[#9ca3af] focus-visible:ring-[#F40F2C]"
               />
             </div>
@@ -874,7 +877,7 @@ export function StudentsScreen() {
                         variant="outline"
                         className="rounded-xl border-[#fecdd3] bg-white text-[#111827] hover:bg-[#fff1f2]"
                       >
-                        <Link href={`/students/${student.id}`}>View profile</Link>
+                        <Link href={`/students/${student.id}`}>{t("nav.studentProfile", "Student Profile")}</Link>
                       </Button>
                     </td>
                   </tr>
@@ -924,7 +927,7 @@ export function StudentsScreen() {
                 asChild
                 className="h-11 w-full rounded-xl bg-[#F40F2C] text-white hover:bg-[#d60d28]"
               >
-                <Link href={`/students/${student.id}`}>Open profile</Link>
+                <Link href={`/students/${student.id}`}>{t("nav.studentProfile", "Student Profile")}</Link>
               </Button>
             </CardContent>
           </HsptsCard>
@@ -957,6 +960,7 @@ function TimelineIcon({ type }: { type: StudentRecord["timeline"][number]["type"
 }
 
 export function StudentProfileScreen({ studentId }: { studentId: string }) {
+  const { t } = useI18n();
   const student = getStudentById(studentId);
   const history = [...(studentHistory[student.id as keyof typeof studentHistory] ?? [])];
   const radarData = [
@@ -980,7 +984,7 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
                 className="h-11 rounded-xl bg-[#F40F2C] px-5 text-white shadow-[0_18px_40px_-20px_rgba(244,15,44,0.8)] hover:bg-[#d60d28]"
               >
                 <Link href="/reports">
-                  Generate PDF
+                  {t("reports.generatePdf", "Generate PDF")}
                   <Download className="h-4 w-4" />
                 </Link>
               </Button>
@@ -989,7 +993,7 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
                 variant="outline"
                 className="h-11 rounded-xl border-[#fecdd3] bg-white text-[#111827] hover:bg-[#fff1f2]"
               >
-                <Link href="/students">Back to roster</Link>
+                <Link href="/students">{t("nav.students", "Students")}</Link>
               </Button>
             </>
           }
@@ -1175,8 +1179,50 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
 }
 
 export function ReportsScreen() {
+  const { t } = useI18n();
   const [selected, setSelected] = useState<(typeof reportPresets)[number]["id"]>("weekly");
   const activePreset = reportPresets.find((preset) => preset.id === selected) ?? reportPresets[0];
+  const nowLabel = new Date().toISOString().slice(0, 10);
+
+  const downloadFile = (fileName: string, content: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePdfExport = (preset: (typeof reportPresets)[number]) => {
+    const lines = [
+      `HSPTS Report: ${preset.title}`,
+      `Date: ${nowLabel}`,
+      "",
+      "Summary",
+      preset.summary,
+      "",
+      "Highlights",
+      ...preset.stats.map((stat) => `- ${stat}`),
+    ];
+    downloadFile(
+      `hspts-${preset.id}-${nowLabel}.pdf`,
+      lines.join("\n"),
+      "application/pdf",
+    );
+  };
+
+  const handleExcelExport = (preset: (typeof reportPresets)[number]) => {
+    const csv = [
+      "metric,value",
+      ...preset.stats.map((stat, index) => `"highlight_${index + 1}","${stat.replace(/"/g, '""')}"`),
+    ].join("\n");
+    downloadFile(
+      `hspts-${preset.id}-${nowLabel}.csv`,
+      csv,
+      "text/csv;charset=utf-8;",
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -1297,9 +1343,17 @@ export function ReportsScreen() {
                   </div>
                   {selected === preset.id ? (
                     <span className="rounded-full bg-[#fff1f2] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[#F40F2C]">
-                      selected
+                      {t("reports.selected", "selected")}
                     </span>
-                  ) : null}
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="h-8 rounded-full border-[#fecdd3] bg-white px-3 text-xs font-semibold text-[#111827] hover:bg-[#fff1f2]"
+                      onClick={() => setSelected(preset.id)}
+                    >
+                      {t("common.select", "Select")}
+                    </Button>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {preset.stats.map((stat) => (
@@ -1312,16 +1366,20 @@ export function ReportsScreen() {
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <Button className="h-11 rounded-xl bg-[#F40F2C] text-white hover:bg-[#d60d28]">
+                  <Button
+                    className="h-11 rounded-xl bg-[#F40F2C] text-white hover:bg-[#d60d28]"
+                    onClick={() => handlePdfExport(preset)}
+                  >
                     <Download className="h-4 w-4" />
-                    Generate PDF
+                    {t("reports.generatePdf", "Generate PDF")}
                   </Button>
                   <Button
                     variant="outline"
                     className="h-11 rounded-xl border-[#fecdd3] bg-white text-[#111827] hover:bg-[#fff1f2]"
+                    onClick={() => handleExcelExport(preset)}
                   >
                     <FileSpreadsheet className="h-4 w-4" />
-                    Export Excel
+                    {t("reports.exportExcel", "Export Excel")}
                   </Button>
                 </div>
               </CardContent>

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Bell,
   FileText,
@@ -15,16 +16,20 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 
 const navigation = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/students", label: "Students", icon: Users },
-  { href: "/students/hspts-1004", label: "Student Profile", icon: Sparkles },
-  { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/", labelKey: "nav.overview", fallback: "Overview", icon: LayoutDashboard },
+  { href: "/students", labelKey: "nav.students", fallback: "Students", icon: Users },
+  { href: "/student-portal", labelKey: "nav.studentPortal", fallback: "Student Portal", icon: Sparkles },
+  { href: "/students/hspts-1004", labelKey: "nav.studentProfile", fallback: "Student Profile", icon: Sparkles },
+  { href: "/reports", labelKey: "nav.reports", fallback: "Reports", icon: FileText },
 ] as const;
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
     <nav className="space-y-2">
@@ -45,7 +50,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            <span>{item.label}</span>
+            <span>{t(item.labelKey, item.fallback)}</span>
             <span
               className={cn(
                 "ml-auto h-2 w-2 rounded-full transition-opacity",
@@ -88,6 +93,38 @@ export function HsptsShell({
   children: React.ReactNode;
   universityName?: string;
 }) {
+  const router = useRouter();
+  const { t } = useI18n();
+  const pathname = usePathname();
+  const isAuthRoute =
+    pathname === "/login" || pathname === "/sign-in" || pathname === "/register";
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    setIsLoggedIn(localStorage.getItem("hspts_auth") === "true");
+  }, [pathname]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("hspts_auth");
+    localStorage.removeItem("hspts_user_email");
+    setIsLoggedIn(false);
+    router.push("/login");
+  };
+
+  if (isAuthRoute) {
+    return (
+      <div
+        className="min-h-screen bg-white text-[#111827]"
+        style={{
+          fontFamily:
+            '"Avenir Next", "Segoe UI Variable", "SF Pro Display", "Helvetica Neue", sans-serif',
+        }}
+      >
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-white text-[#111827]"
@@ -107,7 +144,7 @@ export function HsptsShell({
           <HolbertonMark />
           <div className="mt-10">
             <p className="px-4 text-xs font-semibold uppercase tracking-[0.24em] text-[#9ca3af]">
-              Navigation
+              {t("shell.navigation", "Navigation")}
             </p>
             <div className="mt-4">
               <NavLinks />
@@ -116,13 +153,16 @@ export function HsptsShell({
 
           <div className="mt-auto rounded-[28px] border border-[#fecdd3] bg-[linear-gradient(180deg,_rgba(244,15,44,0.1),_rgba(255,255,255,0.96)_80%)] p-5 shadow-[0_24px_70px_-46px_rgba(244,15,44,0.6)]">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#F40F2C]">
-              Campus view
+              {t("shell.campusView", "Campus view")}
             </p>
             <p className="mt-3 text-lg font-black tracking-tight text-[#111827]">
               {universityName ?? "Holberton School"}
             </p>
             <p className="mt-2 text-sm leading-6 text-[#6b7280]">
-              Built for education operations: mentor intervention, student health, and exportable performance reporting.
+              {t(
+                "shell.builtFor",
+                "Built for education operations: mentor intervention, student health, and exportable performance reporting.",
+              )}
             </p>
           </div>
         </aside>
@@ -145,6 +185,9 @@ export function HsptsShell({
                     <SheetTitle className="sr-only">Holberton navigation</SheetTitle>
                     <HolbertonMark />
                     <div className="mt-8">
+                      <div className="mb-4">
+                        <LanguageSwitcher />
+                      </div>
                       <NavLinks />
                     </div>
                   </SheetContent>
@@ -158,12 +201,38 @@ export function HsptsShell({
               <div className="relative ml-auto hidden max-w-xl flex-1 xl:block">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]" />
                 <Input
-                  placeholder="Search student, cohort, mentor, report..."
+                  placeholder={t("shell.search", "Search student, cohort, mentor, report...")}
                   className="h-12 rounded-2xl border-[#e5e7eb] bg-white pl-11 text-[#111827] placeholder:text-[#9ca3af] focus-visible:ring-[#F40F2C]"
                 />
               </div>
 
               <div className="ml-auto flex items-center gap-3 xl:ml-4">
+                <div className="hidden lg:block">
+                  <LanguageSwitcher />
+                </div>
+                {isLoggedIn ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleLogout}
+                    className="h-11 rounded-xl border-[#fecdd3] bg-white px-4 text-[#111827] hover:bg-[#fff1f2]"
+                  >
+                    {t("common.logout", "Logout")}
+                  </Button>
+                ) : (
+                  <>
+                    <Button asChild variant="outline" className="h-11 rounded-xl border-[#fecdd3] bg-white px-4 hover:bg-[#fff1f2]">
+                      <Link href="/register">{t("common.register", "Register")}</Link>
+                    </Button>
+                    <Button
+                      asChild
+                      className="h-11 rounded-xl bg-[#F40F2C] px-4 text-white hover:bg-[#d60d28]"
+                    >
+                      <Link href="/login">{t("common.login", "Login")}</Link>
+                    </Button>
+                  </>
+                )}
+
                 <button
                   type="button"
                   className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-[#e5e7eb] bg-white text-[#111827] transition-colors hover:bg-[#fff1f2]"
@@ -178,9 +247,11 @@ export function HsptsShell({
                     HS
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-[#111827]">Academic Lead</p>
+                    <p className="text-sm font-semibold text-[#111827]">
+                      {t("shell.role", "Academic Lead")}
+                    </p>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#9ca3af]">
-                      university admin
+                      {t("shell.roleSub", "university admin")}
                     </p>
                   </div>
                 </div>

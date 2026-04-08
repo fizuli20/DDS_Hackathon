@@ -8,6 +8,7 @@ import { CohortsModule } from './modules/cohorts/cohorts.module';
 import { StudentsModule } from './modules/students/students.module';
 import { ActivityEventsModule } from './modules/activity-events/activity-events.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
+import { AnalysisModule } from './modules/analysis/analysis.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { ScoringModule } from './modules/scoring/scoring.module';
     StudentsModule,
     ActivityEventsModule,
     ScoringModule,
+    AnalysisModule,
   ],
 })
 export class AppModule {}

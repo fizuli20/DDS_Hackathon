@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { HsptsShell } from "@/components/hspts-shell";
+import { AppProviders } from "@/components/app-providers";
 
 export const metadata: Metadata = {
   title: "Holberton Student Performance Tracking System",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <HsptsShell universityName="Holberton School">{children}</HsptsShell>
+        <AppProviders>
+          <HsptsShell universityName="Holberton School">{children}</HsptsShell>
+        </AppProviders>
       </body>
     </html>
   );
