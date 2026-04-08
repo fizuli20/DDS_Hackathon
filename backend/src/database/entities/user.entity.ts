@@ -29,4 +29,19 @@ export class UserEntity {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
+
+  @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
+  emailVerifiedAt: Date | null;
+
+  @Column({ name: 'verification_token', type: 'text', nullable: true })
+  verificationToken: string | null;
+
+  @Column({ name: 'verification_token_expires', type: 'timestamptz', nullable: true })
+  verificationTokenExpires: Date | null;
+
+  @Column({ name: 'reset_password_token', type: 'text', nullable: true })
+  resetPasswordToken: string | null;
+
+  @Column({ name: 'reset_password_expires', type: 'timestamptz', nullable: true })
+  resetPasswordExpires: Date | null;
 }

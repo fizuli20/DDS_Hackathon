@@ -8,6 +8,7 @@ import {
   FileText,
   LayoutDashboard,
   Menu,
+  ScrollText,
   Search,
   Sparkles,
   Users,
@@ -18,9 +19,16 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import {
+  clearAuth,
+  getStoredAuthUser,
+  isAdminLikeRole,
+  USE_AUTH_API,
+} from "@/lib/auth-client";
 
 const navigation = [
   { href: "/admin", labelKey: "nav.overview", fallback: "Overview", icon: LayoutDashboard },
+  { href: "/admin/audit", labelKey: "nav.auditLog", fallback: "Audit log", icon: ScrollText },
   { href: "/students", labelKey: "nav.students", fallback: "Students", icon: Users },
   { href: "/students/hspts-1004", labelKey: "nav.studentProfile", fallback: "Student Profile", icon: Sparkles },
   { href: "/reports", labelKey: "nav.reports", fallback: "Reports", icon: FileText },
@@ -97,7 +105,12 @@ export function HsptsShell({
   const { t } = useI18n();
   const pathname = usePathname();
   const isAuthRoute =
-    pathname === "/login" || pathname === "/sign-in" || pathname === "/register";
+    pathname === "/login" ||
+    pathname === "/sign-in" ||
+    pathname === "/register" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
+    pathname === "/verify-email";
   const isStudentPortalRoute = pathname === "/student-portal";
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<"admin" | "user">("user");
@@ -116,10 +129,12 @@ export function HsptsShell({
   useEffect(() => {
     try {
       setIsLoggedIn(getSessionValue("hspts_auth") === "true");
-      setUserRole(
-        getSessionValue("hspts_user_role") === "admin" ? "admin" : "user",
-      );
-      // Clear legacy persisted auth from previous versions.
+      if (USE_AUTH_API) {
+        const u = getStoredAuthUser();
+        setUserRole(isAdminLikeRole(u?.role ?? "") ? "admin" : "user");
+      } else {
+        setUserRole(getSessionValue("hspts_user_role") === "admin" ? "admin" : "user");
+      }
       localStorage.removeItem("hspts_auth");
       localStorage.removeItem("hspts_user_email");
       localStorage.removeItem("hspts_user_role");
@@ -151,9 +166,7 @@ export function HsptsShell({
 
   const handleLogout = () => {
     try {
-      sessionStorage.removeItem("hspts_auth");
-      sessionStorage.removeItem("hspts_user_email");
-      sessionStorage.removeItem("hspts_user_role");
+      clearAuth();
       localStorage.removeItem("hspts_auth");
       localStorage.removeItem("hspts_user_email");
       localStorage.removeItem("hspts_user_role");

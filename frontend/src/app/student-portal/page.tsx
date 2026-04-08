@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock3, LogIn, LogOut } from "lucide-react";
+import { Bell, Clock3, Download, LogIn, LogOut, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,13 @@ type ActivityScoreResponse = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 const localSessionsKey = "hspts_student_sessions";
 const localPortalActivityKey = "hspts_portal_activity";
+const portalNotificationsKey = "hspts_portal_notifications_v1";
+
+type PortalNotification = {
+  id: string;
+  at: string;
+  message: string;
+};
 const namePattern = /^[\p{L}\s'-]{2,60}$/u;
 
 function initialSessionTimes() {
@@ -53,8 +60,44 @@ export default function StudentPortalPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loadingScore, setLoadingScore] = useState(false);
+  const [notifications, setNotifications] = useState<PortalNotification[]>([]);
 
   const todayBounds = getTodayDatetimeLocalBounds();
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(portalNotificationsKey);
+      setNotifications(raw ? (JSON.parse(raw) as PortalNotification[]) : []);
+    } catch {
+      setNotifications([]);
+    }
+  }, []);
+
+  const pushNotification = (message: string) => {
+    const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `n-${Date.now()}`;
+    const entry: PortalNotification = { id, at: new Date().toISOString(), message };
+    setNotifications((prev) => {
+      const next = [entry, ...prev].slice(0, 50);
+      try {
+        localStorage.setItem(portalNotificationsKey, JSON.stringify(next));
+      } catch {
+        // noop
+      }
+      return next;
+    });
+  };
+
+  const removeNotification = (id: string) => {
+    setNotifications((prev) => {
+      const next = prev.filter((n) => n.id !== id);
+      try {
+        localStorage.setItem(portalNotificationsKey, JSON.stringify(next));
+      } catch {
+        // noop
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const onDayChange = () => {
@@ -300,20 +343,33 @@ export default function StudentPortalPage() {
           checkOutAt: checkOutDate.toISOString(),
           durationMinutes,
         });
+        pushNotification(
+          t("portal.notif.sessionLogged", "Attendance recorded ({minutes} min).").replace(
+            "{minutes}",
+            String(durationMinutes),
+          ),
+        );
         await fetchScore(safeStudentId);
         return;
       }
 
+      const durationMinutes = Math.max(
+        0,
+        Math.round((checkOutDate.getTime() - checkInDate.getTime()) / 60000),
+      );
       appendPortalActivity({
         studentId: safeStudentId,
         fullName: `${safeFirstName} ${safeLastName}`,
         checkInAt: checkInDate.toISOString(),
         checkOutAt: checkOutDate.toISOString(),
-        durationMinutes: Math.max(
-          0,
-          Math.round((checkOutDate.getTime() - checkInDate.getTime()) / 60000),
-        ),
+        durationMinutes,
       });
+      pushNotification(
+        t("portal.notif.sessionLogged", "Attendance recorded ({minutes} min).").replace(
+          "{minutes}",
+          String(durationMinutes),
+        ),
+      );
       await fetchScore(safeStudentId);
     } catch (err) {
       const safeFirstName = sanitizeTextInput(firstName);
@@ -342,6 +398,12 @@ export default function StudentPortalPage() {
         checkOutAt: checkOut.toISOString(),
         durationMinutes,
       });
+      pushNotification(
+        t("portal.notif.sessionLogged", "Attendance recorded ({minutes} min).").replace(
+          "{minutes}",
+          String(durationMinutes),
+        ),
+      );
       await fetchScore(safeStudentId);
       setError(err instanceof Error ? err.message : t("common.unknownError", "Unknown error occurred."));
     } finally {
@@ -349,8 +411,92 @@ export default function StudentPortalPage() {
     }
   };
 
+  const mergedSessions = useMemo(() => {
+    const sid = sanitizeTextInput(studentId.trim());
+    if (!sid) {
+      return [];
+    }
+    const fromApi = activity?.recentSessions ?? [];
+    const local = getLocalSessions(sid);
+    const seen = new Set<string>();
+    const key = (s: { checkInAt: string; checkOutAt: string }) => `${s.checkInAt}|${s.checkOutAt}`;
+    const merged: ActivityScoreResponse["recentSessions"] = [];
+    for (const s of [...fromApi, ...local]) {
+      const k = key(s);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      merged.push(s);
+    }
+    merged.sort((a, b) => new Date(b.checkInAt).getTime() - new Date(a.checkInAt).getTime());
+    return merged;
+  }, [activity, studentId]);
+
+  const handleExportSessionsCsv = () => {
+    const sid = sanitizeTextInput(studentId.trim());
+    if (!sid || mergedSessions.length === 0) {
+      return;
+    }
+    const csv = [
+      "check_in_iso,check_out_iso,duration_minutes",
+      ...mergedSessions.map((s) =>
+        [
+          `"${s.checkInAt.replace(/"/g, '""')}"`,
+          `"${s.checkOutAt.replace(/"/g, '""')}"`,
+          String(s.durationMinutes),
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `hspts-sessions-${sid}-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 pb-10 sm:px-0">
+      <Card className="rounded-2xl border border-[#e5e7eb] shadow-[0_12px_40px_-32px_rgba(0,0,0,0.12)]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl font-black text-[#111827]">
+            <Bell className="h-5 w-5 text-[#F40F2C]" />
+            {t("portal.notifications", "Notifications")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {notifications.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">
+              {t("portal.noNotifications", "No notifications yet. Logging a session will add one here.")}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {notifications.map((n) => (
+                <li
+                  key={n.id}
+                  className="flex items-start justify-between gap-3 rounded-xl border border-[#e5e7eb] bg-[#fafafa] p-3 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-[#111827]">{n.message}</p>
+                    <p className="mt-1 font-mono text-xs text-[#9ca3af]">{new Date(n.at).toLocaleString()}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-lg text-[#9ca3af] hover:text-[#b91c1c]"
+                    onClick={() => removeNotification(n.id)}
+                    aria-label={t("portal.dismissNotification", "Dismiss")}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="rounded-2xl border border-[#fecdd3] shadow-[0_22px_60px_-40px_rgba(244,15,44,0.45)]">
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
@@ -524,6 +670,64 @@ export default function StudentPortalPage() {
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl border border-[#e5e7eb]">
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="flex items-center gap-2 text-xl font-black text-[#111827] sm:text-2xl">
+              <Clock3 className="h-5 w-5 shrink-0 text-[#F40F2C]" />
+              {t("portal.sessionHistory", "Session history")}
+            </CardTitle>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExportSessionsCsv}
+              disabled={mergedSessions.length === 0}
+              className="h-11 w-full shrink-0 rounded-xl border-[#e5e7eb] bg-white sm:w-auto hover:bg-[#fff1f2]"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {t("portal.exportSessionsCsv", "Export CSV")}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {mergedSessions.length === 0 ? (
+            <p className="text-sm text-[#6b7280]">
+              {t(
+                "portal.sessionHistoryEmpty",
+                "No sessions yet for this student ID. Log a session or refresh the score.",
+              )}
+            </p>
+          ) : (
+            <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+              <table className="w-full min-w-[520px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#e5e7eb] text-xs font-semibold uppercase tracking-[0.12em] text-[#9ca3af]">
+                    <th className="py-3 pr-4">{t("portal.checkIn", "Check-in time")}</th>
+                    <th className="py-3 pr-4">{t("portal.checkOut", "Check-out time")}</th>
+                    <th className="py-3 text-right">{t("portal.duration", "Duration")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mergedSessions.map((row) => (
+                    <tr key={`${row.checkInAt}-${row.checkOutAt}`} className="border-b border-[#f3f4f6]">
+                      <td className="py-2.5 pr-4 font-mono text-xs text-[#374151]">
+                        {new Date(row.checkInAt).toLocaleString()}
+                      </td>
+                      <td className="py-2.5 pr-4 font-mono text-xs text-[#374151]">
+                        {new Date(row.checkOutAt).toLocaleString()}
+                      </td>
+                      <td className="py-2.5 text-right font-semibold text-[#111827]">
+                        {row.durationMinutes} {t("portal.minutesShort", "min")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>

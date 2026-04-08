@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { sanitizeTextInput } from "@/lib/sanitize";
+import { apiRegister, USE_AUTH_API } from "@/lib/auth-client";
 
 export default function RegisterPage() {
   const { t } = useI18n();
@@ -34,8 +35,13 @@ export default function RegisterPage() {
       return;
     }
 
-    if (safePassword.length < 6) {
-      setError(t("auth.error.passwordMin", "Password must be at least 6 characters."));
+    const minLen = USE_AUTH_API ? 8 : 6;
+    if (safePassword.length < minLen) {
+      setError(
+        USE_AUTH_API
+          ? t("auth.error.passwordMin8", "Password must be at least 8 characters.")
+          : t("auth.error.passwordMin", "Password must be at least 6 characters."),
+      );
       return;
     }
 
@@ -46,6 +52,12 @@ export default function RegisterPage() {
 
     setIsSubmitting(true);
     try {
+      if (USE_AUTH_API) {
+        await apiRegister(safeEmail, safePassword);
+        router.push("/login?registered=1");
+        return;
+      }
+
       await new Promise((resolve) => setTimeout(resolve, 600));
 
       try {

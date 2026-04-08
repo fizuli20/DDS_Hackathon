@@ -9,10 +9,13 @@ import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { sanitizeTextInput } from "@/lib/sanitize";
+import { apiLogin, isAdminLikeRole, USE_AUTH_API } from "@/lib/auth-client";
+import { useAuth } from "@/contexts/auth-context";
 
 export default function LoginPage() {
   const { t } = useI18n();
   const router = useRouter();
+  const { setSessionFromLogin } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -37,7 +40,13 @@ export default function LoginPage() {
 
     setIsSubmitting(true);
     try {
-      // Placeholder auth flow for hackathon demo with role routing.
+      if (USE_AUTH_API) {
+        const data = await apiLogin(normalizedEmail, normalizedPassword);
+        setSessionFromLogin(data.access_token, data.user);
+        router.push(isAdminLikeRole(data.user.role) ? "/admin" : "/student-portal");
+        return;
+      }
+
       await new Promise((resolve) => setTimeout(resolve, 500));
       const isAdmin =
         normalizedEmail === "admin@holbertonschool.com" &&
@@ -159,11 +168,18 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <div className="mt-5 text-center text-sm text-[#6b7280]">
-          {t("auth.noAccount", "No account?")}{" "}
-          <Link href="/register" className="font-semibold text-[#F40F2C] hover:underline">
-            {t("common.register", "Register")}
-          </Link>
+        <div className="mt-5 space-y-2 text-center text-sm text-[#6b7280]">
+          <div>
+            {t("auth.noAccount", "No account?")}{" "}
+            <Link href="/register" className="font-semibold text-[#F40F2C] hover:underline">
+              {t("common.register", "Register")}
+            </Link>
+          </div>
+          <div>
+            <Link href="/forgot-password" className="font-semibold text-[#F40F2C] hover:underline">
+              {t("auth.forgotPassword", "Forgot password?")}
+            </Link>
+          </div>
         </div>
       </div>
     </main>

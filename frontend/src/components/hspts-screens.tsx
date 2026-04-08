@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import { jsPDF } from "jspdf";
 import {
@@ -9,6 +10,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Bell,
+  Bookmark,
   BookCheck,
   CalendarDays,
   ChevronRight,
@@ -18,6 +20,7 @@ import {
   Minus,
   Search,
   ShieldAlert,
+  Trash2,
   Sparkles,
   TrendingUp,
   UserRound,
@@ -185,6 +188,17 @@ function toRiskLevel(overall: number): RiskLevel {
   if (overall < 90) return "MEDIUM";
   return "STRONG";
 }
+
+const FILTER_PRESET_KEY = "hspts_student_filter_presets_v1";
+
+type StudentFilterPreset = {
+  id: string;
+  name: string;
+  cohort: string;
+  track: string;
+  riskLevel: string;
+  search: string;
+};
 
 function normalizeStudentId(raw: string | undefined, index: number) {
   if (!raw || raw.startsWith("N/A")) {
@@ -985,25 +999,37 @@ export function OverviewScreen({
 
 export function StudentsScreen() {
   const { t } = useI18n();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { summary: sheetSummary, loading: sheetLoading } = useSheetDataset();
   const aiTrendMap = useSheetTrends();
   const [cohort, setCohort] = useState("All Cohorts");
   const [track, setTrack] = useState("All Tracks");
   const [riskLevel, setRiskLevel] = useState("All Risk Levels");
   const [search, setSearch] = useState("");
+  const [filterPresets, setFilterPresets] = useState<StudentFilterPreset[]>([]);
+  const [urlSyncDone, setUrlSyncDone] = useState(false);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
+    try {
+      const raw = localStorage.getItem(FILTER_PRESET_KEY);
+      setFilterPresets(raw ? (JSON.parse(raw) as StudentFilterPreset[]) : []);
+    } catch {
+      setFilterPresets([]);
     }
-    const syncFromUrl = () => {
-      setSearch(new URLSearchParams(window.location.search).get("q") ?? "");
-    };
-    syncFromUrl();
-    window.addEventListener("popstate", syncFromUrl);
-    return () => window.removeEventListener("popstate", syncFromUrl);
   }, []);
+
+  useEffect(() => {
+    setSearch(searchParams.get("q") ?? "");
+    const co = searchParams.get("cohort");
+    const tr = searchParams.get("track");
+    const rk = searchParams.get("risk");
+    setCohort(co ?? t("students.allCohorts", "All Cohorts"));
+    setTrack(tr ?? t("students.allTracks", "All Tracks"));
+    setRiskLevel(rk ?? t("students.allRiskLevels", "All Risk Levels"));
+    setUrlSyncDone(true);
+  }, [searchParams, t]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1018,6 +1044,54 @@ export function StudentsScreen() {
       window.removeEventListener("hspts-global-search", onGlobalSearch as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (!urlSyncDone) return;
+    const timer = window.setTimeout(() => {
+      const sp = new URLSearchParams();
+      if (search.trim()) sp.set("q", search.trim());
+      if (cohort !== t("students.allCohorts", "All Cohorts")) sp.set("cohort", cohort);
+      if (track !== t("students.allTracks", "All Tracks")) sp.set("track", track);
+      if (riskLevel !== t("students.allRiskLevels", "All Risk Levels")) sp.set("risk", riskLevel);
+      const qs = sp.toString();
+      router.replace(qs ? `/students?${qs}` : "/students", { scroll: false });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [cohort, track, riskLevel, search, router, t, urlSyncDone]);
+
+  const persistPresets = (next: StudentFilterPreset[]) => {
+    setFilterPresets(next);
+    try {
+      localStorage.setItem(FILTER_PRESET_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+
+  const applyPreset = (preset: StudentFilterPreset) => {
+    setCohort(preset.cohort);
+    setTrack(preset.track);
+    setRiskLevel(preset.riskLevel);
+    setSearch(preset.search);
+  };
+
+  const handleSaveFilterPreset = () => {
+    const name = window.prompt(t("students.presetNamePrompt", "Preset name (e.g. At-risk cohort A)"));
+    if (!name?.trim()) return;
+    const next: StudentFilterPreset = {
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}`,
+      name: name.trim(),
+      cohort,
+      track,
+      riskLevel,
+      search,
+    };
+    persistPresets([...filterPresets, next]);
+  };
+
+  const handleDeletePreset = (id: string) => {
+    persistPresets(filterPresets.filter((p) => p.id !== id));
+  };
 
   const roster = useMemo(() => {
     if (!sheetSummary?.students?.length) {
@@ -1160,6 +1234,53 @@ export function StudentsScreen() {
                 placeholder={t("shell.search", "Search student, cohort, mentor, report...")}
                 className="h-12 rounded-xl border-[#e5e7eb] bg-white pl-11 text-[#111827] placeholder:text-[#9ca3af] focus-visible:ring-[#F40F2C]"
               />
+            </div>
+
+            <div className="col-span-full flex flex-col gap-3 border-t border-[#e5e7eb] pt-4 sm:flex-row sm:flex-wrap sm:items-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9ca3af]">
+                {t("students.savedFilters", "Saved filters")}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-10 rounded-xl border-[#e5e7eb] bg-white text-[#111827] hover:bg-[#fff1f2]"
+                  onClick={handleSaveFilterPreset}
+                >
+                  <Bookmark className="mr-2 h-4 w-4 text-[#F40F2C]" />
+                  {t("students.saveFilterPreset", "Save current filters")}
+                </Button>
+                {filterPresets.length === 0 ? (
+                  <span className="text-sm text-[#9ca3af]">
+                    {t("students.noFilterPresets", "No presets yet — save your cohort, track, risk, and search.")}
+                  </span>
+                ) : (
+                  filterPresets.map((preset) => (
+                    <div key={preset.id} className="flex items-center gap-1 rounded-xl border border-[#e5e7eb] bg-[#fafafa] p-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 rounded-lg px-3 text-[#111827] hover:bg-white"
+                        onClick={() => applyPreset(preset)}
+                      >
+                        {preset.name}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 rounded-lg text-[#9ca3af] hover:bg-white hover:text-[#b91c1c]"
+                        onClick={() => handleDeletePreset(preset.id)}
+                        aria-label={t("students.deletePreset", "Delete preset")}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </CardContent>
         </HsptsCard>

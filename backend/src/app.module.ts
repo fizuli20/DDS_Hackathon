@@ -10,6 +10,8 @@ import { ActivityEventsModule } from './modules/activity-events/activity-events.
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { AnalysisModule } from './modules/analysis/analysis.module';
 import { DataSourcesModule } from './modules/data-sources/data-sources.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { AuditModule } from './modules/audit/audit.module';
 
 const enableDb = process.env.ENABLE_DB === 'true';
 const enableQueue = process.env.ENABLE_QUEUE === 'true';
@@ -36,7 +38,7 @@ const enableQueue = process.env.ENABLE_QUEUE === 'true';
         ]
       : []),
     ...(enableDb
-      ? [UsersModule, CohortsModule, StudentsModule, ActivityEventsModule, DataSourcesModule]
+      ? [UsersModule, AuthModule, AuditModule, CohortsModule, StudentsModule, ActivityEventsModule, DataSourcesModule]
       : []),
     ...(enableQueue ? [ScoringModule] : []),
     AnalysisModule,
