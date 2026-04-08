@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Clock3, LogIn, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +22,9 @@ type ActivityScoreResponse = {
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api";
+const localSessionsKey = "hspts_student_sessions";
+const localPortalActivityKey = "hspts_portal_activity";
+const namePattern = /^[\p{L}\s'-]{2,60}$/u;
 
 function nowLocalDateTimeValue() {
   const date = new Date();
@@ -31,6 +35,9 @@ function nowLocalDateTimeValue() {
 
 export default function StudentPortalPage() {
   const { t } = useI18n();
+  const router = useRouter();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [studentId, setStudentId] = useState("hspts-1004");
   const [checkInAt, setCheckInAt] = useState(nowLocalDateTimeValue());
   const [checkOutAt, setCheckOutAt] = useState(nowLocalDateTimeValue());
@@ -39,9 +46,106 @@ export default function StudentPortalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loadingScore, setLoadingScore] = useState(false);
 
+  const handleLogout = () => {
+    try {
+      sessionStorage.removeItem("hspts_auth");
+      sessionStorage.removeItem("hspts_user_email");
+      sessionStorage.removeItem("hspts_user_role");
+      localStorage.removeItem("hspts_auth");
+      localStorage.removeItem("hspts_user_email");
+      localStorage.removeItem("hspts_user_role");
+    } catch {
+      // Ignore storage cleanup issues.
+    }
+    router.push("/login");
+  };
+
+  const getLocalSessions = (targetStudentId: string) => {
+    try {
+      const raw = localStorage.getItem(localSessionsKey);
+      const parsed = raw ? (JSON.parse(raw) as Record<string, ActivityScoreResponse["recentSessions"]>) : {};
+      return parsed[targetStudentId] || [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveLocalSessions = (
+    targetStudentId: string,
+    sessions: ActivityScoreResponse["recentSessions"],
+  ) => {
+    try {
+      const raw = localStorage.getItem(localSessionsKey);
+      const parsed = raw ? (JSON.parse(raw) as Record<string, ActivityScoreResponse["recentSessions"]>) : {};
+      parsed[targetStudentId] = sessions;
+      localStorage.setItem(localSessionsKey, JSON.stringify(parsed));
+    } catch {
+      // noop
+    }
+  };
+
+  const computeLocalScore = (
+    targetStudentId: string,
+    sessions: ActivityScoreResponse["recentSessions"],
+  ): ActivityScoreResponse => {
+    const totalMinutes = sessions.reduce((sum, item) => sum + item.durationMinutes, 0);
+    const averageMinutes = sessions.length ? totalMinutes / sessions.length : 0;
+    const score = Math.min(100, Math.round(40 + averageMinutes / 3 + sessions.length * 4));
+    return {
+      studentId: targetStudentId,
+      score,
+      sessionsCount: sessions.length,
+      averageSessionMinutes: Math.round(averageMinutes),
+      recentSessions: sessions.slice(0, 10),
+    };
+  };
+
+  const appendPortalActivity = (entry: {
+    studentId: string;
+    fullName: string;
+    checkInAt: string;
+    checkOutAt: string;
+    durationMinutes: number;
+  }) => {
+    try {
+      const raw = localStorage.getItem(localPortalActivityKey);
+      const parsed = raw
+        ? (JSON.parse(raw) as Array<
+            {
+              studentId: string;
+              fullName: string;
+              checkInAt: string;
+              checkOutAt: string;
+              durationMinutes: number;
+              loggedAt: string;
+            }
+          >)
+        : [];
+      const next = [{ ...entry, loggedAt: new Date().toISOString() }, ...parsed].slice(0, 100);
+      localStorage.setItem(localPortalActivityKey, JSON.stringify(next));
+    } catch {
+      // noop
+    }
+  };
+
+  const sanitizeTextInput = (value: string) =>
+    value
+      .replace(/[<>]/g, "")
+      .replace(/[\u0000-\u001F\u007F]/g, "")
+      .trim();
+
+  const validateNameField = (value: string) => namePattern.test(value);
+
   const canSubmit = useMemo(
-    () => Boolean(studentId.trim() && checkInAt && checkOutAt),
-    [studentId, checkInAt, checkOutAt],
+    () =>
+      Boolean(
+        studentId.trim() &&
+          checkInAt &&
+          checkOutAt &&
+          validateNameField(sanitizeTextInput(firstName)) &&
+          validateNameField(sanitizeTextInput(lastName)),
+      ),
+    [studentId, checkInAt, checkOutAt, firstName, lastName],
   );
 
   const fetchScore = async (targetStudentId: string) => {
@@ -51,12 +155,16 @@ export default function StudentPortalPage() {
         `${apiBaseUrl}/students/${encodeURIComponent(targetStudentId)}/activity-score`,
       );
       if (!response.ok) {
-        throw new Error("Aktivlik skorunu almaq mümkün olmadı.");
+        const local = computeLocalScore(targetStudentId, getLocalSessions(targetStudentId));
+        setActivity(local);
+        return;
       }
       const data = (await response.json()) as ActivityScoreResponse;
       setActivity(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Bilinməyən xəta baş verdi.");
+      const local = computeLocalScore(targetStudentId, getLocalSessions(targetStudentId));
+      setActivity(local);
+      setError(err instanceof Error ? err.message : t("common.unknownError", "Unknown error occurred."));
     } finally {
       setLoadingScore(false);
     }
@@ -69,10 +177,28 @@ export default function StudentPortalPage() {
     }
 
     setError("");
+    const safeFirstName = sanitizeTextInput(firstName);
+    const safeLastName = sanitizeTextInput(lastName);
+    if (!validateNameField(safeFirstName) || !validateNameField(safeLastName)) {
+      setError(
+        t(
+          "portal.error.invalidName",
+          "Name and surname must be 2-60 chars and include only letters, spaces, apostrophe, or hyphen.",
+        ),
+      );
+      return;
+    }
+
+    const safeStudentId = sanitizeTextInput(studentId);
+    if (!safeStudentId) {
+      setError(t("portal.error.studentIdRequired", "Student ID cannot be empty."));
+      return;
+    }
+
     setSubmitting(true);
     try {
       const response = await fetch(
-        `${apiBaseUrl}/students/${encodeURIComponent(studentId.trim())}/attendance-log`,
+        `${apiBaseUrl}/students/${encodeURIComponent(safeStudentId)}/attendance-log`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -84,12 +210,73 @@ export default function StudentPortalPage() {
       );
 
       if (!response.ok) {
-        throw new Error("Giriş/çıxış vaxtını qeyd etmək mümkün olmadı.");
+        const local = getLocalSessions(safeStudentId);
+        const checkIn = new Date(checkInAt);
+        const checkOut = new Date(checkOutAt);
+        const durationMinutes = Math.max(
+          0,
+          Math.round((checkOut.getTime() - checkIn.getTime()) / 60000),
+        );
+        const next = [
+          {
+            checkInAt: checkIn.toISOString(),
+            checkOutAt: checkOut.toISOString(),
+            durationMinutes,
+          },
+          ...local,
+        ].slice(0, 30);
+        saveLocalSessions(safeStudentId, next);
+        appendPortalActivity({
+          studentId: safeStudentId,
+          fullName: `${safeFirstName} ${safeLastName}`,
+          checkInAt: checkIn.toISOString(),
+          checkOutAt: checkOut.toISOString(),
+          durationMinutes,
+        });
+        await fetchScore(safeStudentId);
+        return;
       }
 
-      await fetchScore(studentId.trim());
+      appendPortalActivity({
+        studentId: safeStudentId,
+        fullName: `${safeFirstName} ${safeLastName}`,
+        checkInAt: new Date(checkInAt).toISOString(),
+        checkOutAt: new Date(checkOutAt).toISOString(),
+        durationMinutes: Math.max(
+          0,
+          Math.round((new Date(checkOutAt).getTime() - new Date(checkInAt).getTime()) / 60000),
+        ),
+      });
+      await fetchScore(safeStudentId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Bilinməyən xəta baş verdi.");
+      const safeFirstName = sanitizeTextInput(firstName);
+      const safeLastName = sanitizeTextInput(lastName);
+      const safeStudentId = sanitizeTextInput(studentId);
+      const local = getLocalSessions(safeStudentId);
+      const checkIn = new Date(checkInAt);
+      const checkOut = new Date(checkOutAt);
+      const durationMinutes = Math.max(
+        0,
+        Math.round((checkOut.getTime() - checkIn.getTime()) / 60000),
+      );
+      const next = [
+        {
+          checkInAt: checkIn.toISOString(),
+          checkOutAt: checkOut.toISOString(),
+          durationMinutes,
+        },
+        ...local,
+      ].slice(0, 30);
+      saveLocalSessions(safeStudentId, next);
+      appendPortalActivity({
+        studentId: safeStudentId,
+        fullName: `${safeFirstName} ${safeLastName}`.trim() || t("portal.unknownStudent", "Unknown student"),
+        checkInAt: checkIn.toISOString(),
+        checkOutAt: checkOut.toISOString(),
+        durationMinutes,
+      });
+      await fetchScore(safeStudentId);
+      setError(err instanceof Error ? err.message : t("common.unknownError", "Unknown error occurred."));
     } finally {
       setSubmitting(false);
     }
@@ -99,18 +286,54 @@ export default function StudentPortalPage() {
     <div className="space-y-6">
       <Card className="rounded-2xl border border-[#fecdd3] shadow-[0_22px_60px_-40px_rgba(244,15,44,0.45)]">
         <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div className="pt-2">
+              <LanguageSwitcher />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleLogout}
+              className="h-10 rounded-xl border-[#fecdd3] bg-white px-4 text-[#111827] hover:bg-[#fff1f2]"
+            >
+              {t("common.logout", "Logout")}
+            </Button>
+          </div>
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#F40F2C]">
             {t("portal.studentSide", "Student Side")}
           </p>
           <CardTitle className="text-3xl font-black tracking-tight text-[#111827]">
             {t("portal.title", "Check-In / Check-Out and Activity Score")}
           </CardTitle>
-          <div className="pt-2">
-            <LanguageSwitcher />
-          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogSession} className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-[#111827]" htmlFor="firstName">
+                Name
+              </label>
+              <Input
+                id="firstName"
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+                placeholder={t("portal.firstName", "Name")}
+                className="h-11 rounded-xl border-[#e5e7eb]"
+                required
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-[#111827]" htmlFor="lastName">
+                Surname
+              </label>
+              <Input
+                id="lastName"
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+                placeholder={t("portal.lastName", "Surname")}
+                className="h-11 rounded-xl border-[#e5e7eb]"
+                required
+              />
+            </div>
             <div className="md:col-span-2">
               <label className="mb-2 block text-sm font-semibold text-[#111827]" htmlFor="studentId">
                 {t("portal.studentId", "Student ID")}
@@ -167,7 +390,7 @@ export default function StudentPortalPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => fetchScore(studentId.trim())}
+                onClick={() => fetchScore(sanitizeTextInput(studentId))}
                 disabled={loadingScore || !studentId.trim()}
                 className="h-11 rounded-xl border-[#fecdd3] bg-white hover:bg-[#fff1f2]"
               >
@@ -184,30 +407,37 @@ export default function StudentPortalPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-2xl font-black text-[#111827]">
             <Clock3 className="h-5 w-5 text-[#F40F2C]" />
-            Aktivlik nəticəsi
+            {t("portal.activityResult", "Activity result")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {!activity ? (
             <p className="text-sm text-[#6b7280]">
-              Skoru görmək üçün əvvəlcə giriş/çıxış vaxtı əlavə edin və ya “Aktivlik skorunu yenilə”
-              düyməsini basın.
+              {t(
+                "portal.activityHelp",
+                "To see the score, first add check-in/check-out times or click 'Refresh activity score'.",
+              )}
             </p>
           ) : (
             <div className="space-y-3">
               <p className="text-sm text-[#6b7280]">
-                Student: <span className="font-semibold text-[#111827]">{activity.studentId}</span>
+                {t("portal.studentLabel", "Student")}:{" "}
+                <span className="font-semibold text-[#111827]">{activity.studentId}</span>
               </p>
               <p className="text-5xl font-black tracking-tight text-[#111827]">{activity.score}</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl bg-[#fafafa] p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#9ca3af]">Sessiya sayı</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#9ca3af]">
+                    {t("portal.sessionsCount", "Sessions count")}
+                  </p>
                   <p className="mt-2 text-2xl font-black text-[#111827]">{activity.sessionsCount}</p>
                 </div>
                 <div className="rounded-xl bg-[#fafafa] p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#9ca3af]">Orta dəqiqə</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#9ca3af]">
+                    {t("portal.avgMinutes", "Average minutes")}
+                  </p>
                   <p className="mt-2 text-2xl font-black text-[#111827]">
-                    {activity.averageSessionMinutes} dk
+                    {activity.averageSessionMinutes} {t("portal.minutesShort", "min")}
                   </p>
                 </div>
               </div>

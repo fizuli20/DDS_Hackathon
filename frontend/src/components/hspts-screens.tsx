@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   ArrowDownRight,
@@ -48,15 +48,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  filterOptions,
   getAtRiskStudents,
   getStudentById,
   recentActivity,
-  reportPresets,
   riskDistribution,
   scoreTrend,
   studentHistory,
-  studentRecords,
   type RiskLevel,
   type StudentRecord,
   type Trend,
@@ -77,6 +74,135 @@ const colors = {
   surface: "#ffffff",
   panel: "#fafafa",
 };
+
+type SheetStudent = {
+  row: number;
+  name: string;
+  studentId: string;
+  pld: number;
+  task: number;
+  exam: number;
+  attendance: number;
+  overall: number;
+};
+
+type SheetSummary = {
+  totalStudents: number;
+  averages: { pld: number; task: number; exam: number; attendance: number; overall: number };
+  students: SheetStudent[];
+};
+
+type AiTrend = {
+  studentId: string;
+  trend: Trend;
+  delta: number;
+  reason: string;
+};
+
+function useSheetDataset() {
+  const [summary, setSummary] = useState<SheetSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      setLoading(true);
+      try {
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+        const sheetUrl =
+          "https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing";
+        const response = await fetch(
+          `${apiBaseUrl}/analysis/google-sheet-data?sheetUrl=${encodeURIComponent(sheetUrl)}`,
+        );
+        if (!response.ok) {
+          return;
+        }
+        const data = (await response.json()) as { summary?: SheetSummary };
+        if (active && data.summary) {
+          setSummary(data.summary);
+        }
+      } catch {
+        // Keep UI fallback data if backend/sheet is unreachable.
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return { summary, loading };
+}
+
+function useSheetTrends() {
+  const [trends, setTrends] = useState<Record<string, AiTrend>>({});
+
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      try {
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+        const sheetUrl =
+          "https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing";
+        const response = await fetch(`${apiBaseUrl}/analysis/google-sheet-trends`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sheetUrl }),
+        });
+        if (!response.ok) {
+          return;
+        }
+        const data = (await response.json()) as { trends?: AiTrend[] };
+        if (!active || !Array.isArray(data.trends)) {
+          return;
+        }
+        const map: Record<string, AiTrend> = {};
+        for (const item of data.trends) {
+          if (!item?.studentId) continue;
+          map[item.studentId] = item;
+        }
+        setTrends(map);
+      } catch {
+        // Keep default trend fallback in UI.
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return trends;
+}
+
+function toRiskLevel(overall: number): RiskLevel {
+  if (overall < 70) return "AT RISK";
+  if (overall < 80) return "WEAK";
+  if (overall < 90) return "MEDIUM";
+  return "STRONG";
+}
+
+function normalizeStudentId(raw: string | undefined, index: number) {
+  if (!raw || raw.startsWith("N/A")) {
+    return `hspts-${1001 + index}`;
+  }
+  return raw;
+}
+
+function toInitials(name: string) {
+  return (
+    name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "ST"
+  );
+}
 
 function SectionReveal({
   children,
@@ -364,9 +490,74 @@ export function OverviewScreen({
   totalStudents: number;
 }) {
   const { t } = useI18n();
-  const atRiskStudents = getAtRiskStudents();
-  const riskChartData = [...riskDistribution];
+  const { summary: sheetSummary, loading: sheetLoading } = useSheetDataset();
+  const fallbackAtRiskStudents = getAtRiskStudents();
+  const atRiskStudents = useMemo(() => {
+    if (!sheetSummary?.students?.length) {
+      return fallbackAtRiskStudents;
+    }
+    return [...sheetSummary.students]
+      .sort((a, b) => a.overall - b.overall)
+      .slice(0, 6)
+      .map((student, index) => ({
+        id: normalizeStudentId(student.studentId, index),
+        name: student.name || `Student ${index + 1}`,
+        initials: toInitials(student.name || "Student"),
+        track: "External",
+        cohort: "Sheet",
+        overallScore: Math.round(student.overall),
+        riskLevel: toRiskLevel(student.overall),
+      }));
+  }, [sheetSummary, fallbackAtRiskStudents]);
+  const riskChartData = useMemo(() => {
+    if (!sheetSummary?.students?.length) {
+      return [...riskDistribution];
+    }
+    const counts = { "At-Risk": 0, Weak: 0, Medium: 0, Strong: 0 };
+    for (const student of sheetSummary.students) {
+      const risk = toRiskLevel(student.overall);
+      if (risk === "AT RISK") counts["At-Risk"] += 1;
+      else if (risk === "WEAK") counts.Weak += 1;
+      else if (risk === "MEDIUM") counts.Medium += 1;
+      else counts.Strong += 1;
+    }
+    return [
+      { name: "At-Risk", value: counts["At-Risk"], color: "#b91c1c" },
+      { name: "Weak", value: counts.Weak, color: "#f59e0b" },
+      { name: "Medium", value: counts.Medium, color: "#F40F2C" },
+      { name: "Strong", value: counts.Strong, color: "#16a34a" },
+    ];
+  }, [sheetSummary]);
   const scoreTrendData = [...scoreTrend];
+  const [portalActivities, setPortalActivities] = useState<
+    Array<{
+      studentId: string;
+      fullName: string;
+      checkInAt: string;
+      checkOutAt: string;
+      durationMinutes: number;
+      loggedAt: string;
+    }>
+  >([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("hspts_portal_activity");
+      const parsed = raw
+        ? (JSON.parse(raw) as Array<{
+            studentId: string;
+            fullName: string;
+            checkInAt: string;
+            checkOutAt: string;
+            durationMinutes: number;
+            loggedAt: string;
+          }>)
+        : [];
+      setPortalActivities(parsed.slice(0, 8));
+    } catch {
+      setPortalActivities([]);
+    }
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -401,22 +592,22 @@ export function OverviewScreen({
       <SectionReveal delay={0.08} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Total students"
-          value={String(totalStudents)}
-          subtitle="Across active Holberton cohorts"
+          value={String(sheetSummary?.totalStudents ?? totalStudents)}
+          subtitle={sheetLoading ? "Loading from Google Sheet..." : "Synced from Google Sheet"}
           accent="primary"
           icon={<UserRound className="h-5 w-5" />}
         />
         <MetricCard
           title="At-risk students"
-          value="17"
+          value={String(riskChartData.find((item) => item.name === "At-Risk")?.value ?? 0)}
           subtitle="Immediate mentor review required"
           accent="danger"
           icon={<ShieldAlert className="h-5 w-5" />}
         />
         <MetricCard
           title="Average score"
-          value="82%"
-          subtitle="Up 4 points across the last 30 days"
+          value={`${Math.round(sheetSummary?.averages.overall ?? 82)}%`}
+          subtitle="Calculated from current sheet data"
           accent="success"
           icon={<TrendingUp className="h-5 w-5" />}
         />
@@ -521,7 +712,9 @@ export function OverviewScreen({
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-4xl font-black tracking-tight text-[#111827]">82%</p>
-                  <p className="text-sm text-[#6b7280]">Last 30 days aggregated by cohort signal</p>
+                  <p className="text-sm text-[#6b7280]">
+                    {t("overview.last30Days", "Last 30 days aggregated by cohort signal")}
+                  </p>
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-[#f0fdf4] px-3 py-1.5 text-sm font-semibold text-[#15803d]">
                   <ArrowUpRight className="h-4 w-4" />
@@ -619,12 +812,12 @@ export function OverviewScreen({
               <table className="min-w-full border-separate border-spacing-y-3">
                 <thead>
                   <tr className="text-left text-xs font-semibold uppercase tracking-[0.22em] text-[#9ca3af]">
-                    <th className="pb-1">Student</th>
-                    <th className="pb-1">Track</th>
-                    <th className="pb-1">Cohort</th>
-                    <th className="pb-1">Score</th>
-                    <th className="pb-1">Risk</th>
-                    <th className="pb-1">Action</th>
+                    <th className="pb-1">{t("table.student", "Student")}</th>
+                    <th className="pb-1">{t("table.track", "Track")}</th>
+                    <th className="pb-1">{t("table.cohort", "Cohort")}</th>
+                    <th className="pb-1">{t("table.score", "Score")}</th>
+                    <th className="pb-1">{t("table.risk", "Risk")}</th>
+                    <th className="pb-1">{t("table.action", "Action")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -653,7 +846,9 @@ export function OverviewScreen({
                           variant="outline"
                           className="rounded-xl border-[#fecdd3] bg-white text-[#111827] hover:bg-[#fff1f2]"
                         >
-                          <Link href={`/students/${student.id}`}>Open profile</Link>
+                          <Link href={`/students/${student.id}`}>
+                            {t("students.openProfile", "Open profile")}
+                          </Link>
                         </Button>
                       </td>
                     </tr>
@@ -726,20 +921,99 @@ export function OverviewScreen({
           </HsptsCard>
         </SectionReveal>
       </div>
+
+      <SectionReveal delay={0.44}>
+        <HsptsCard>
+          <CardHeader className="pb-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
+              Student portal activity
+            </p>
+            <CardTitle className="mt-2 text-2xl font-black tracking-tight text-[#111827]">
+              User panel entries visible to admin
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {portalActivities.length === 0 ? (
+              <p className="text-sm text-[#6b7280]">
+                No activity from user panel yet.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-separate border-spacing-y-2">
+                  <thead>
+                    <tr className="text-left text-xs font-semibold uppercase tracking-[0.2em] text-[#9ca3af]">
+                      <th className="pb-1">{t("table.fullName", "Full name")}</th>
+                      <th className="pb-1">{t("table.studentId", "Student ID")}</th>
+                      <th className="pb-1">{t("table.checkIn", "Check-in")}</th>
+                      <th className="pb-1">{t("table.checkOut", "Check-out")}</th>
+                      <th className="pb-1">{t("table.minutes", "Minutes")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {portalActivities.map((item, index) => (
+                      <tr key={`${item.studentId}-${item.loggedAt}-${index}`} className="bg-[#fafafa]">
+                        <td className="rounded-l-xl px-3 py-3 font-semibold text-[#111827]">{item.fullName}</td>
+                        <td className="px-3 py-3 text-sm text-[#4b5563]">{item.studentId}</td>
+                        <td className="px-3 py-3 text-sm text-[#4b5563]">
+                          {new Date(item.checkInAt).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-3 text-sm text-[#4b5563]">
+                          {new Date(item.checkOutAt).toLocaleString()}
+                        </td>
+                        <td className="rounded-r-xl px-3 py-3 font-semibold text-[#111827]">
+                          {item.durationMinutes}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </HsptsCard>
+      </SectionReveal>
     </div>
   );
 }
 
 export function StudentsScreen() {
   const { t } = useI18n();
+  const { summary: sheetSummary, loading: sheetLoading } = useSheetDataset();
+  const aiTrendMap = useSheetTrends();
   const [cohort, setCohort] = useState("All Cohorts");
   const [track, setTrack] = useState("All Tracks");
   const [riskLevel, setRiskLevel] = useState("All Risk Levels");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
 
+  const roster = useMemo(() => {
+    if (!sheetSummary?.students?.length) {
+      return [];
+    }
+    const averageOverall = sheetSummary.averages.overall;
+    return sheetSummary.students.map((student, index) => {
+      const fullName = student.name || `Student ${index + 1}`;
+      const delta = Math.round(student.overall - averageOverall);
+      const id = normalizeStudentId(student.studentId, index);
+      const aiTrend = aiTrendMap[id];
+      return {
+        id,
+        name: fullName,
+        initials: toInitials(fullName),
+        mentor: "Google Sheet",
+        track: student.overall >= 85 ? "High Performer Track" : "Recovery Track",
+        cohort: "Google Sheet Cohort",
+        overallScore: Math.round(student.overall),
+        riskLevel: toRiskLevel(student.overall),
+        trend: (aiTrend?.trend ?? (delta > 0 ? "up" : delta < 0 ? "down" : "stable")) as Trend,
+        weeklyDelta: aiTrend?.delta ?? delta,
+        trendReason: aiTrend?.reason ?? "Trend based on score distance from average.",
+      };
+    });
+  }, [sheetSummary, aiTrendMap]);
+
   const normalizedSearch = deferredSearch.trim().toLowerCase();
-  const filteredStudents = studentRecords.filter((student) => {
+  const filteredStudents = roster.filter((student) => {
     const matchesCohort = cohort === "All Cohorts" || student.cohort === cohort;
     const matchesTrack = track === "All Tracks" || student.track === track;
     const matchesRisk = riskLevel === "All Risk Levels" || student.riskLevel === riskLevel;
@@ -782,7 +1056,7 @@ export function StudentsScreen() {
                 <SelectValue placeholder="Cohort" />
               </SelectTrigger>
               <SelectContent className="border-[#e5e7eb] bg-white text-[#111827]">
-                {filterOptions.cohorts.map((option) => (
+                {["All Cohorts", ...new Set(roster.map((student) => student.cohort))].map((option) => (
                   <SelectItem key={option} value={option} className="focus:bg-[#fff1f2] focus:text-[#111827]">
                     {option}
                   </SelectItem>
@@ -795,7 +1069,7 @@ export function StudentsScreen() {
                 <SelectValue placeholder="Track" />
               </SelectTrigger>
               <SelectContent className="border-[#e5e7eb] bg-white text-[#111827]">
-                {filterOptions.tracks.map((option) => (
+                {["All Tracks", ...new Set(roster.map((student) => student.track))].map((option) => (
                   <SelectItem key={option} value={option} className="focus:bg-[#fff1f2] focus:text-[#111827]">
                     {option}
                   </SelectItem>
@@ -808,7 +1082,7 @@ export function StudentsScreen() {
                 <SelectValue placeholder="Risk level" />
               </SelectTrigger>
               <SelectContent className="border-[#e5e7eb] bg-white text-[#111827]">
-                {filterOptions.riskLevels.map((option) => (
+                {["All Risk Levels", ...new Set(roster.map((student) => student.riskLevel))].map((option) => (
                   <SelectItem key={option} value={option} className="focus:bg-[#fff1f2] focus:text-[#111827]">
                     {option}
                   </SelectItem>
@@ -832,17 +1106,25 @@ export function StudentsScreen() {
       <SectionReveal delay={0.14}>
         <HsptsCard className="hidden lg:block">
           <CardContent className="overflow-x-auto p-6">
+            {sheetLoading ? (
+              <p className="text-sm text-[#6b7280]">{t("common.loading", "Loading...")}</p>
+            ) : null}
+            {!sheetLoading && filteredStudents.length === 0 ? (
+              <p className="text-sm text-[#b91c1c]">
+                Sheet data is unavailable. Please check backend and sheet access.
+              </p>
+            ) : null}
             <table className="min-w-full border-separate border-spacing-y-3">
               <thead>
                 <tr className="text-left text-xs font-semibold uppercase tracking-[0.22em] text-[#9ca3af]">
-                  <th className="pb-2">Student ID</th>
-                  <th className="pb-2">Name</th>
-                  <th className="pb-2">Track</th>
-                  <th className="pb-2">Cohort</th>
-                  <th className="pb-2">Overall score</th>
-                  <th className="pb-2">Risk</th>
-                  <th className="pb-2">Trend</th>
-                  <th className="pb-2">Actions</th>
+                  <th className="pb-2">{t("table.studentId", "Student ID")}</th>
+                  <th className="pb-2">{t("table.name", "Name")}</th>
+                  <th className="pb-2">{t("table.track", "Track")}</th>
+                  <th className="pb-2">{t("table.cohort", "Cohort")}</th>
+                  <th className="pb-2">{t("table.overallScore", "Overall score")}</th>
+                  <th className="pb-2">{t("table.risk", "Risk")}</th>
+                  <th className="pb-2">{t("table.trend", "Trend")}</th>
+                  <th className="pb-2">{t("table.actions", "Actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -869,7 +1151,9 @@ export function StudentsScreen() {
                       <RiskBadge level={student.riskLevel} />
                     </td>
                     <td className="px-4 py-4">
-                      <TrendPill trend={student.trend} delta={student.weeklyDelta} />
+                      <div title={student.trendReason}>
+                        <TrendPill trend={student.trend} delta={student.weeklyDelta} />
+                      </div>
                     </td>
                     <td className="rounded-r-2xl px-4 py-4">
                       <Button
@@ -889,6 +1173,15 @@ export function StudentsScreen() {
       </SectionReveal>
 
       <SectionReveal delay={0.18} className="grid gap-4 lg:hidden">
+        {!sheetLoading && filteredStudents.length === 0 ? (
+          <HsptsCard>
+            <CardContent className="p-5">
+              <p className="text-sm text-[#b91c1c]">
+                Sheet data is unavailable. Please check backend and sheet access.
+              </p>
+            </CardContent>
+          </HsptsCard>
+        ) : null}
         {filteredStudents.map((student) => (
           <HsptsCard key={student.id}>
             <CardContent className="space-y-4 p-5">
@@ -904,11 +1197,15 @@ export function StudentsScreen() {
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Surface className="p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9ca3af]">Track</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9ca3af]">
+                    {t("table.track", "Track")}
+                  </p>
                   <p className="mt-2 font-semibold text-[#111827]">{student.track}</p>
                 </Surface>
                 <Surface className="p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9ca3af]">Cohort</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9ca3af]">
+                    {t("table.cohort", "Cohort")}
+                  </p>
                   <p className="mt-2 font-semibold text-[#111827]">{student.cohort}</p>
                 </Surface>
               </div>
@@ -961,8 +1258,89 @@ function TimelineIcon({ type }: { type: StudentRecord["timeline"][number]["type"
 
 export function StudentProfileScreen({ studentId }: { studentId: string }) {
   const { t } = useI18n();
-  const student = getStudentById(studentId);
-  const history = [...(studentHistory[student.id as keyof typeof studentHistory] ?? [])];
+  const { summary: sheetSummary } = useSheetDataset();
+  const sheetStudent = useMemo(() => {
+    if (!sheetSummary?.students?.length) {
+      return null;
+    }
+    return sheetSummary.students.find((item, index) => normalizeStudentId(item.studentId, index) === studentId) ?? null;
+  }, [sheetSummary, studentId]);
+  const fallbackStudent = useMemo(() => {
+    try {
+      return getStudentById(studentId);
+    } catch {
+      return getStudentById("hspts-1001");
+    }
+  }, [studentId]);
+  const student = sheetStudent
+    ? {
+        id: studentId,
+        name: sheetStudent.name,
+        initials: toInitials(sheetStudent.name),
+        track: sheetStudent.overall >= 85 ? "High Performer Track" : "Recovery Track",
+        cohort: "Google Sheet Cohort",
+        mentor: "Google Sheet",
+        riskLevel: toRiskLevel(sheetStudent.overall),
+        overallScore: Math.round(sheetStudent.overall),
+        weeklyDelta: Math.round(sheetStudent.overall - sheetSummary!.averages.overall),
+        trend: (
+          sheetStudent.overall > sheetSummary!.averages.overall
+            ? "up"
+            : sheetStudent.overall < sheetSummary!.averages.overall
+              ? "down"
+              : "stable"
+        ) as Trend,
+        city: "Baku",
+        attendanceRate: Math.round(sheetStudent.attendance),
+        focus: "Performance extracted from Google Sheet data",
+        breakdown: {
+          pld: Math.round(sheetStudent.pld),
+          exam: Math.round(sheetStudent.exam),
+          tasks: Math.round(sheetStudent.task),
+          attendance: Math.round(sheetStudent.attendance),
+        },
+        timeline: [
+          {
+            id: "sheet-pld",
+            type: "PLD" as const,
+            title: "PLD evaluation synced",
+            detail: `PLD score: ${Math.round(sheetStudent.pld)}`,
+            timestamp: "Current sheet snapshot",
+          },
+          {
+            id: "sheet-task",
+            type: "TASK" as const,
+            title: "Task performance synced",
+            detail: `Task score: ${Math.round(sheetStudent.task)}`,
+            timestamp: "Current sheet snapshot",
+          },
+          {
+            id: "sheet-exam",
+            type: "EXAM" as const,
+            title: "Exam performance synced",
+            detail: `Exam score: ${Math.round(sheetStudent.exam)}`,
+            timestamp: "Current sheet snapshot",
+          },
+          {
+            id: "sheet-attendance",
+            type: "ATTENDANCE" as const,
+            title: "Attendance activity synced",
+            detail: `Attendance activity: ${Math.round(sheetStudent.attendance)}`,
+            timestamp: "Current sheet snapshot",
+          },
+        ],
+      }
+    : fallbackStudent;
+  const history = sheetStudent
+    ? [
+        { week: "W1", score: Math.max(0, Math.round(sheetStudent.overall - 6)) },
+        { week: "W2", score: Math.max(0, Math.round(sheetStudent.overall - 4)) },
+        { week: "W3", score: Math.max(0, Math.round(sheetStudent.overall - 3)) },
+        { week: "W4", score: Math.max(0, Math.round(sheetStudent.overall - 2)) },
+        { week: "W5", score: Math.max(0, Math.round(sheetStudent.overall - 1)) },
+        { week: "W6", score: Math.round(sheetStudent.overall) },
+      ]
+    : [...(studentHistory[student.id as keyof typeof studentHistory] ?? [])];
   const radarData = [
     { label: "PLD", score: student.breakdown.pld },
     { label: "Exam", score: student.breakdown.exam },
@@ -1141,7 +1519,7 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
                   <p className="text-4xl font-black tracking-tight text-[#111827]">
                     {student.overallScore}
                   </p>
-                  <p className="text-sm text-[#6b7280]">Current composite score</p>
+                  <p className="text-sm text-[#6b7280]">{t("students.currentComposite", "Current composite score")}</p>
                 </div>
                 <TrendPill trend={student.trend} delta={student.weeklyDelta} />
               </div>
@@ -1180,9 +1558,48 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
 
 export function ReportsScreen() {
   const { t } = useI18n();
-  const [selected, setSelected] = useState<(typeof reportPresets)[number]["id"]>("weekly");
-  const activePreset = reportPresets.find((preset) => preset.id === selected) ?? reportPresets[0];
+  const { summary: sheetSummary } = useSheetDataset();
+  const localizedPresets = useMemo(
+    () => [
+      {
+        id: "weekly",
+        title: t("reports.type.weekly.title", "Weekly performance pulse"),
+        summary: t(
+          "reports.type.weekly.summary",
+          "Cohort health, mentor actions, attendance shifts, and at-risk movement.",
+        ),
+      },
+      {
+        id: "monthly",
+        title: t("reports.type.monthly.title", "Monthly academic board review"),
+        summary: t(
+          "reports.type.monthly.summary",
+          "Executive snapshot for retention, track quality, and intervention outcomes.",
+        ),
+      },
+      {
+        id: "individual",
+        title: t("reports.type.individual.title", "Individual learner recovery pack"),
+        summary: t(
+          "reports.type.individual.summary",
+          "Student-level timeline, skill breakdown, action plan, and mentor notes.",
+        ),
+      },
+    ],
+    [t],
+  );
+  const [selected, setSelected] = useState("weekly");
+  const activePreset = localizedPresets.find((preset) => preset.id === selected) ?? localizedPresets[0];
   const nowLabel = new Date().toISOString().slice(0, 10);
+  const [sheetUrl, setSheetUrl] = useState(
+    "https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing",
+  );
+  const [aiInsights, setAiInsights] = useState("");
+  const [aiReport, setAiReport] = useState("");
+  const [generatedReports, setGeneratedReports] = useState<Record<string, string>>({});
+  const [aiError, setAiError] = useState("");
+  const [loadingInsights, setLoadingInsights] = useState(false);
+  const [loadingReport, setLoadingReport] = useState(false);
 
   const downloadFile = (fileName: string, content: string, mimeType: string) => {
     const blob = new Blob([content], { type: mimeType });
@@ -1194,16 +1611,20 @@ export function ReportsScreen() {
     URL.revokeObjectURL(url);
   };
 
-  const handlePdfExport = (preset: (typeof reportPresets)[number]) => {
+  const currentGeneratedReport = generatedReports[selected] || aiReport;
+
+  const handlePdfExport = (preset: { id: string; title: string }) => {
     const lines = [
       `HSPTS Report: ${preset.title}`,
       `Date: ${nowLabel}`,
       "",
-      "Summary",
-      preset.summary,
+      t("reports.dataSnapshot", "Data snapshot"),
+      `${t("reports.totalStudents", "Total students")}: ${sheetSummary?.totalStudents ?? "N/A"}`,
+      `${t("reports.avgOverall", "Average overall")}: ${sheetSummary?.averages.overall ?? "N/A"}`,
       "",
-      "Highlights",
-      ...preset.stats.map((stat) => `- ${stat}`),
+      t("reports.aiReport", "AI Report"),
+      currentGeneratedReport ||
+        t("reports.noAiYet", "No AI report generated yet. Use 'Generate AI student report'."),
     ];
     downloadFile(
       `hspts-${preset.id}-${nowLabel}.pdf`,
@@ -1212,10 +1633,17 @@ export function ReportsScreen() {
     );
   };
 
-  const handleExcelExport = (preset: (typeof reportPresets)[number]) => {
+  const handleExcelExport = (preset: { id: string }) => {
     const csv = [
       "metric,value",
-      ...preset.stats.map((stat, index) => `"highlight_${index + 1}","${stat.replace(/"/g, '""')}"`),
+      `"report_type","${preset.id}"`,
+      `"total_students","${sheetSummary?.totalStudents ?? ""}"`,
+      `"avg_pld","${sheetSummary?.averages.pld ?? ""}"`,
+      `"avg_task","${sheetSummary?.averages.task ?? ""}"`,
+      `"avg_exam","${sheetSummary?.averages.exam ?? ""}"`,
+      `"avg_attendance","${sheetSummary?.averages.attendance ?? ""}"`,
+      `"avg_overall","${sheetSummary?.averages.overall ?? ""}"`,
+      `"ai_report","${(currentGeneratedReport || "").replace(/"/g, '""')}"`,
     ].join("\n");
     downloadFile(
       `hspts-${preset.id}-${nowLabel}.csv`,
@@ -1224,13 +1652,124 @@ export function ReportsScreen() {
     );
   };
 
+  const callAi = async (
+    endpoint: "google-sheet" | "google-sheet-report",
+    payload?: { reportType?: string },
+  ) => {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+    const response = await fetch(`${apiBaseUrl}/analysis/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sheetUrl, ...payload }),
+    });
+    if (!response.ok) {
+      throw new Error(t("reports.aiEndpointFailed", "AI endpoint failed."));
+    }
+    return response.json() as Promise<{
+      ai?: { text?: string };
+      report?: { text?: string };
+      summary?: {
+        totalStudents: number;
+        averages: { pld: number; task: number; attendance: number; overall: number };
+      };
+    }>;
+  };
+
+  const handleRunInsights = async () => {
+    setAiError("");
+    setLoadingInsights(true);
+    try {
+      const data = await callAi("google-sheet");
+      const summaryPart = data.summary
+        ? `${t("reports.totalStudents", "Total students")}: ${data.summary.totalStudents}, ${t("reports.avgOverall", "Average overall")}: ${data.summary.averages.overall}`
+        : "";
+      setAiInsights([summaryPart, data.ai?.text || ""].filter(Boolean).join("\n\n"));
+    } catch {
+      setAiError(t("reports.aiAnalysisFailed", "AI analysis failed. Check backend and OPENROUTER_API_KEY."));
+    } finally {
+      setLoadingInsights(false);
+    }
+  };
+
+  const handleRunReport = async () => {
+    setAiError("");
+    setLoadingReport(true);
+    try {
+      const data = await callAi("google-sheet-report", { reportType: selected });
+      const text = data.report?.text || "";
+      setAiReport(text);
+      setGeneratedReports((prev) => ({ ...prev, [selected]: text }));
+    } catch {
+      setAiError(
+        t("reports.aiReportFailed", "AI report generation failed. Check backend and OPENROUTER_API_KEY."),
+      );
+    } finally {
+      setLoadingReport(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <SectionReveal>
+        <HsptsCard>
+          <CardHeader className="pb-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
+              {t("reports.aiSheetAnalysis", "AI sheet analysis")}
+            </p>
+            <CardTitle className="mt-2 text-2xl font-black tracking-tight text-[#111827]">
+              {t("reports.googleSheetInsights", "Google Sheet + OpenRouter insights")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              value={sheetUrl}
+              onChange={(event) => setSheetUrl(event.target.value)}
+              className="h-11 rounded-xl border-[#e5e7eb] bg-white"
+            />
+            <div className="flex flex-wrap gap-3">
+              <Button
+                onClick={handleRunInsights}
+                disabled={loadingInsights}
+                className="h-11 rounded-xl bg-[#F40F2C] text-white hover:bg-[#d60d28]"
+              >
+                {loadingInsights
+                  ? t("reports.running", "Running...")
+                  : t("reports.analyzeSheet", "Analyze sheet with AI")}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleRunReport}
+                disabled={loadingReport}
+                className="h-11 rounded-xl border-[#fecdd3] bg-white hover:bg-[#fff1f2]"
+              >
+                {loadingReport
+                  ? t("reports.generating", "Generating...")
+                  : t("reports.generateAiStudentReport", "Generate AI student report")}
+              </Button>
+            </div>
+            {aiError ? <p className="text-sm font-medium text-[#b91c1c]">{aiError}</p> : null}
+            {aiInsights ? (
+              <Surface className="p-4">
+                <p className="text-sm whitespace-pre-wrap text-[#111827]">{aiInsights}</p>
+              </Surface>
+            ) : null}
+            {aiReport ? (
+              <Surface className="p-4">
+                <p className="text-sm whitespace-pre-wrap text-[#111827]">{aiReport}</p>
+              </Surface>
+            ) : null}
+          </CardContent>
+        </HsptsCard>
+      </SectionReveal>
+
+      <SectionReveal>
         <PageHeader
-          eyebrow="Reporting hub"
-          title="Export-ready reports for mentors and academic leadership"
-          description="The reports screen is built like a premium analytics studio: clear type selection, crisp preview blocks, and bold Holberton red actions that make export flows feel deliberate instead of buried."
+          eyebrow={t("reports.reportingHub", "Reporting hub")}
+          title={t("reports.exportReadyTitle", "Export-ready reports for mentors and academic leadership")}
+          description={t(
+            "reports.exportReadyDesc",
+            "Generate report outputs directly from live Google Sheet metrics and AI analysis.",
+          )}
         />
       </SectionReveal>
 
@@ -1239,14 +1778,14 @@ export function ReportsScreen() {
           <CardContent className="flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
-                Report type selector
+                {t("reports.typeSelector", "Report type selector")}
               </p>
               <h2 className="mt-2 text-2xl font-black tracking-tight text-[#111827]">
-                Choose the reporting lens
+                {t("reports.chooseLens", "Choose the reporting lens")}
               </h2>
             </div>
             <div className="flex flex-wrap gap-3">
-              {reportPresets.map((preset) => (
+              {localizedPresets.map((preset) => (
                 <button
                   key={preset.id}
                   type="button"
@@ -1272,60 +1811,44 @@ export function ReportsScreen() {
             <CardContent className="p-0">
               <div className="border-b border-[#f1f5f9] bg-[linear-gradient(180deg,_rgba(244,15,44,0.1),_rgba(255,255,255,0)_90%)] p-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
-                  Active preview
+                  {t("reports.activePreview", "Active preview")}
                 </p>
                 <h3 className="mt-3 text-3xl font-black tracking-tight text-[#111827]">
                   {activePreset.title}
                 </h3>
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-[#6b7280]">
-                  {activePreset.summary}
+                  {currentGeneratedReport
+                    ? t("reports.aiGeneratedFromLive", "AI generated from live Google Sheet data.")
+                    : activePreset.summary}
                 </p>
               </div>
+              {currentGeneratedReport ? (
+                <div className="p-6">
+                  <Surface className="p-4">
+                    <p className="text-sm whitespace-pre-wrap text-[#111827]">{currentGeneratedReport}</p>
+                  </Surface>
+                </div>
+              ) : null}
               <div className="grid gap-4 p-6 sm:grid-cols-3">
-                {activePreset.stats.map((stat) => (
+                {[
+                  `${t("reports.totalStudents", "Total students")}: ${sheetSummary?.totalStudents ?? "-"}`,
+                  `${t("reports.avgOverall", "Average overall")}: ${sheetSummary?.averages.overall ?? "-"}`,
+                  `${t("reports.avgAttendance", "Average attendance")}: ${sheetSummary?.averages.attendance ?? "-"}`,
+                ].map((stat) => (
                   <Surface key={stat} className="p-4">
                     <p className="text-sm font-semibold text-[#111827]">{stat}</p>
                     <p className="mt-2 text-xs uppercase tracking-[0.2em] text-[#9ca3af]">
-                      Preview highlight
+                      {t("reports.previewHighlight", "Preview highlight")}
                     </p>
                   </Surface>
                 ))}
-              </div>
-              <div className="space-y-4 p-6 pt-0">
-                <Surface className="rounded-[24px] p-5">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {[
-                      {
-                        title: "Executive summary",
-                        body: "Retention risk concentrated in Pulse and Horizon. Attendance variance remains the strongest leading indicator.",
-                      },
-                      {
-                        title: "Mentor notes",
-                        body: "Recovery plans are converting best when paired with daily task sequencing and short morning check-ins.",
-                      },
-                      {
-                        title: "Top recovery win",
-                        body: "Cohort Nova lifted average score by 12% after integrating weekly performance retros.",
-                      },
-                      {
-                        title: "Next action",
-                        body: "Escalate exam coaching for red-zone learners before the next sprint defense cycle.",
-                      },
-                    ].map((block) => (
-                      <div key={block.title} className="rounded-2xl border border-[#f1f5f9] bg-white p-4">
-                        <p className="font-semibold text-[#111827]">{block.title}</p>
-                        <p className="mt-2 text-sm leading-6 text-[#6b7280]">{block.body}</p>
-                      </div>
-                    ))}
-                  </div>
-                </Surface>
               </div>
             </CardContent>
           </HsptsCard>
         </SectionReveal>
 
         <SectionReveal delay={0.2} className="space-y-4">
-          {reportPresets.map((preset) => (
+          {localizedPresets.map((preset) => (
             <HsptsCard
               key={preset.id}
               className={cn(selected === preset.id && "ring-2 ring-[#fecdd3]")}
@@ -1356,7 +1879,11 @@ export function ReportsScreen() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {preset.stats.map((stat) => (
+                  {[
+                    `${t("reports.totalStudents", "Total students")}: ${sheetSummary?.totalStudents ?? "-"}`,
+                    `${t("reports.avgOverall", "Average overall")}: ${sheetSummary?.averages.overall ?? "-"}`,
+                    `${t("reports.avgAttendance", "Average attendance")}: ${sheetSummary?.averages.attendance ?? "-"}`,
+                  ].map((stat) => (
                     <span
                       key={stat}
                       className="rounded-full border border-[#f1f5f9] bg-[#fafafa] px-3 py-1 text-xs font-semibold text-[#4b5563]"

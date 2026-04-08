@@ -1,5 +1,5 @@
-import { OverviewScreen } from "@/components/hspts-screens";
+import { redirect } from "next/navigation";
 
 export default function HomePage() {
-  return <OverviewScreen universityName="Holberton School" totalStudents={218} />;
+  redirect("/login");
 }

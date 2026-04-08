@@ -21,18 +21,67 @@ export default function LoginPage() {
     event.preventDefault();
     setError("");
 
-    if (!email.trim() || !password.trim()) {
-      setError("Email və şifrə mütləqdir.");
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPassword = password.trim();
+
+    if (!normalizedEmail || !normalizedPassword) {
+      setError(t("auth.error.requiredLogin", "Email and password are required."));
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError(t("auth.error.invalidEmail", "Enter a valid email format."));
       return;
     }
 
     setIsSubmitting(true);
 
-    // Placeholder auth flow for hackathon demo.
+    // Placeholder auth flow for hackathon demo with role routing.
     await new Promise((resolve) => setTimeout(resolve, 500));
-    localStorage.setItem("hspts_auth", "true");
-    localStorage.setItem("hspts_user_email", email.trim());
-    router.push("/");
+    const isAdmin =
+      normalizedEmail === "admin@holbertonschool.com" && normalizedPassword === "admin1234";
+
+    if (!isAdmin) {
+      let registeredUser:
+        | {
+            fullName?: string;
+            email?: string;
+            password?: string;
+          }
+        | null = null;
+      try {
+        const raw = localStorage.getItem("hspts_registered_user");
+        registeredUser = raw
+          ? (JSON.parse(raw) as { fullName?: string; email?: string; password?: string })
+          : null;
+      } catch {
+        registeredUser = null;
+      }
+
+      const validRegisteredLogin =
+        registeredUser &&
+        registeredUser.email?.trim().toLowerCase() === normalizedEmail &&
+        registeredUser.password === normalizedPassword;
+
+      if (!validRegisteredLogin) {
+        setError(t("auth.error.invalidCredentials", "Email or password is incorrect."));
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    try {
+      sessionStorage.setItem("hspts_auth", "true");
+      sessionStorage.setItem("hspts_user_email", normalizedEmail);
+      sessionStorage.setItem("hspts_user_role", isAdmin ? "admin" : "user");
+      // Remove legacy persistent auth keys.
+      localStorage.removeItem("hspts_auth");
+      localStorage.removeItem("hspts_user_email");
+      localStorage.removeItem("hspts_user_role");
+    } catch {
+      // Ignore storage access issues in restricted browsers.
+    }
+    router.push(isAdmin ? "/admin" : "/student-portal");
   };
 
   return (
@@ -54,7 +103,7 @@ export default function LoginPage() {
             {t("auth.signIn", "Sign In")}
           </h1>
           <p className="mt-2 text-sm text-[#6b7280]">
-            Student performance dashboard-a daxil olun.
+            {t("auth.loginSubtitle", "Sign in to the student performance dashboard.")}
           </p>
         </div>
 

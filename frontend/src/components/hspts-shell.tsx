@@ -20,11 +20,11 @@ import { useI18n } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
 
 const navigation = [
-  { href: "/", labelKey: "nav.overview", fallback: "Overview", icon: LayoutDashboard },
+  { href: "/admin", labelKey: "nav.overview", fallback: "Overview", icon: LayoutDashboard },
   { href: "/students", labelKey: "nav.students", fallback: "Students", icon: Users },
-  { href: "/student-portal", labelKey: "nav.studentPortal", fallback: "Student Portal", icon: Sparkles },
   { href: "/students/hspts-1004", labelKey: "nav.studentProfile", fallback: "Student Profile", icon: Sparkles },
   { href: "/reports", labelKey: "nav.reports", fallback: "Reports", icon: FileText },
+  { href: "/data-sources", labelKey: "nav.dataSources", fallback: "Data Sources", icon: FileText },
 ] as const;
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
@@ -98,20 +98,89 @@ export function HsptsShell({
   const pathname = usePathname();
   const isAuthRoute =
     pathname === "/login" || pathname === "/sign-in" || pathname === "/register";
+  const isStudentPortalRoute = pathname === "/student-portal";
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState<"admin" | "user">("user");
+  const [authChecked, setAuthChecked] = useState(false);
+
+  const getSessionValue = (key: string) => {
+    try {
+      return sessionStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
 
   useEffect(() => {
-    setIsLoggedIn(localStorage.getItem("hspts_auth") === "true");
+    try {
+      setIsLoggedIn(getSessionValue("hspts_auth") === "true");
+      setUserRole(
+        getSessionValue("hspts_user_role") === "admin" ? "admin" : "user",
+      );
+      // Clear legacy persisted auth from previous versions.
+      localStorage.removeItem("hspts_auth");
+      localStorage.removeItem("hspts_user_email");
+      localStorage.removeItem("hspts_user_role");
+    } catch {
+      setIsLoggedIn(false);
+      setUserRole("user");
+    }
+    setAuthChecked(true);
   }, [pathname]);
 
   const handleLogout = () => {
-    localStorage.removeItem("hspts_auth");
-    localStorage.removeItem("hspts_user_email");
+    try {
+      sessionStorage.removeItem("hspts_auth");
+      sessionStorage.removeItem("hspts_user_email");
+      sessionStorage.removeItem("hspts_user_role");
+      localStorage.removeItem("hspts_auth");
+      localStorage.removeItem("hspts_user_email");
+      localStorage.removeItem("hspts_user_role");
+    } catch {
+      // Ignore storage access issues in restricted browsers.
+    }
     setIsLoggedIn(false);
     router.push("/login");
   };
 
+  useEffect(() => {
+    if (!authChecked || isAuthRoute) {
+      return;
+    }
+    if (!isLoggedIn) {
+      router.replace("/login");
+      return;
+    }
+
+    if (userRole === "user" && pathname !== "/student-portal") {
+      router.replace("/student-portal");
+      return;
+    }
+
+    if (userRole === "admin" && isStudentPortalRoute) {
+      router.replace("/admin");
+    }
+  }, [authChecked, isAuthRoute, isLoggedIn, isStudentPortalRoute, pathname, router, userRole]);
+
   if (isAuthRoute) {
+    return (
+      <div
+        className="min-h-screen bg-white text-[#111827]"
+        style={{
+          fontFamily:
+            '"Avenir Next", "Segoe UI Variable", "SF Pro Display", "Helvetica Neue", sans-serif',
+        }}
+      >
+        {children}
+      </div>
+    );
+  }
+
+  if (!authChecked || !isLoggedIn) {
+    return null;
+  }
+
+  if (isStudentPortalRoute) {
     return (
       <div
         className="min-h-screen bg-white text-[#111827]"
@@ -210,28 +279,14 @@ export function HsptsShell({
                 <div className="hidden lg:block">
                   <LanguageSwitcher />
                 </div>
-                {isLoggedIn ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleLogout}
-                    className="h-11 rounded-xl border-[#fecdd3] bg-white px-4 text-[#111827] hover:bg-[#fff1f2]"
-                  >
-                    {t("common.logout", "Logout")}
-                  </Button>
-                ) : (
-                  <>
-                    <Button asChild variant="outline" className="h-11 rounded-xl border-[#fecdd3] bg-white px-4 hover:bg-[#fff1f2]">
-                      <Link href="/register">{t("common.register", "Register")}</Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="h-11 rounded-xl bg-[#F40F2C] px-4 text-white hover:bg-[#d60d28]"
-                    >
-                      <Link href="/login">{t("common.login", "Login")}</Link>
-                    </Button>
-                  </>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleLogout}
+                  className="h-11 rounded-xl border-[#fecdd3] bg-white px-4 text-[#111827] hover:bg-[#fff1f2]"
+                >
+                  {t("common.logout", "Logout")}
+                </Button>
 
                 <button
                   type="button"

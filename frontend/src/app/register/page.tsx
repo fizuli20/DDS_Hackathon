@@ -24,24 +24,35 @@ export default function RegisterPage() {
     setError("");
 
     if (!fullName.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
-      setError("Bütün xanaları doldurun.");
+      setError(t("auth.error.fillAll", "Please fill in all fields."));
       return;
     }
 
     if (password.length < 6) {
-      setError("Şifrə ən azı 6 simvol olmalıdır.");
+      setError(t("auth.error.passwordMin", "Password must be at least 6 characters."));
       return;
     }
 
     if (password !== confirmPassword) {
-      setError("Şifrələr eyni deyil.");
+      setError(t("auth.error.passwordMismatch", "Passwords do not match."));
       return;
     }
 
     setIsSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 600));
 
-    localStorage.setItem("hspts_registered_user", JSON.stringify({ fullName, email }));
+    try {
+      localStorage.setItem(
+        "hspts_registered_user",
+        JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+        }),
+      );
+    } catch {
+      // Ignore storage access issues in restricted browsers.
+    }
     router.push("/login");
   };
 
@@ -64,7 +75,7 @@ export default function RegisterPage() {
             {t("auth.register", "Register")}
           </h1>
           <p className="mt-2 text-sm text-[#6b7280]">
-            Yeni hesab yaradın və platformaya daxil olun.
+            {t("auth.registerSubtitle", "Create a new account to access the platform.")}
           </p>
         </div>
 
@@ -79,7 +90,7 @@ export default function RegisterPage() {
                 id="fullName"
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
-                placeholder="Ad Soyad"
+                placeholder={t("auth.fullName", "Full name")}
                 className="h-11 rounded-xl border-[#e5e7eb] bg-white pl-10 focus-visible:ring-[#F40F2C]"
               />
             </div>
@@ -114,7 +125,7 @@ export default function RegisterPage() {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Minimum 6 simvol"
+                placeholder={t("auth.passwordMinHint", "Minimum 6 characters")}
                 className="h-11 rounded-xl border-[#e5e7eb] bg-white pl-10 focus-visible:ring-[#F40F2C]"
                 autoComplete="new-password"
               />
@@ -132,7 +143,7 @@ export default function RegisterPage() {
                 type="password"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Şifrəni yenidən yazın"
+                placeholder={t("auth.confirmPasswordHint", "Re-enter password")}
                 className="h-11 rounded-xl border-[#e5e7eb] bg-white pl-10 focus-visible:ring-[#F40F2C]"
                 autoComplete="new-password"
               />

@@ -9,25 +9,36 @@ import { StudentsModule } from './modules/students/students.module';
 import { ActivityEventsModule } from './modules/activity-events/activity-events.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { AnalysisModule } from './modules/analysis/analysis.module';
+import { DataSourcesModule } from './modules/data-sources/data-sources.module';
+
+const enableDb = process.env.ENABLE_DB === 'true';
+const enableQueue = process.env.ENABLE_QUEUE === 'true';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    TypeOrmModule.forRootAsync({
-      useFactory: typeormConfig,
-      inject: [ConfigService],
-    }),
-    BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: Number(process.env.REDIS_PORT || 6379),
-      },
-    }),
-    UsersModule,
-    CohortsModule,
-    StudentsModule,
-    ActivityEventsModule,
-    ScoringModule,
+    ...(enableDb
+      ? [
+          TypeOrmModule.forRootAsync({
+            useFactory: typeormConfig,
+            inject: [ConfigService],
+          }),
+        ]
+      : []),
+    ...(enableQueue
+      ? [
+          BullModule.forRoot({
+            connection: {
+              host: process.env.REDIS_HOST || 'localhost',
+              port: Number(process.env.REDIS_PORT || 6379),
+            },
+          }),
+        ]
+      : []),
+    ...(enableDb
+      ? [UsersModule, CohortsModule, StudentsModule, ActivityEventsModule, DataSourcesModule]
+      : []),
+    ...(enableQueue ? [ScoringModule] : []),
     AnalysisModule,
   ],
 })
