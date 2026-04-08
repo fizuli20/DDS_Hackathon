@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock3, LogIn, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { useI18n } from "@/lib/i18n";
+import {
+  clampDatetimeLocalToBounds,
+  ensureCheckoutAfterCheckin,
+  getTodayDatetimeLocalBounds,
+  isDatetimeLocalWithinTodayBounds,
+  nowLocalDatetimeLocalValue,
+} from "@/lib/datetime-local";
 import { isValidStudentId, sanitizeTextInput } from "@/lib/sanitize";
 
 type ActivityScoreResponse = {
@@ -27,11 +34,11 @@ const localSessionsKey = "hspts_student_sessions";
 const localPortalActivityKey = "hspts_portal_activity";
 const namePattern = /^[\p{L}\s'-]{2,60}$/u;
 
-function nowLocalDateTimeValue() {
-  const date = new Date();
-  const offset = date.getTimezoneOffset();
-  const local = new Date(date.getTime() - offset * 60000);
-  return local.toISOString().slice(0, 16);
+function initialSessionTimes() {
+  const bounds = getTodayDatetimeLocalBounds();
+  const raw = nowLocalDatetimeLocalValue();
+  const clamped = clampDatetimeLocalToBounds(raw, bounds.min, bounds.max);
+  return { checkIn: clamped, checkOut: ensureCheckoutAfterCheckin(clamped, clamped, bounds.max) };
 }
 
 export default function StudentPortalPage() {
@@ -40,12 +47,36 @@ export default function StudentPortalPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [studentId, setStudentId] = useState("hspts-1004");
-  const [checkInAt, setCheckInAt] = useState(nowLocalDateTimeValue());
-  const [checkOutAt, setCheckOutAt] = useState(nowLocalDateTimeValue());
+  const [checkInAt, setCheckInAt] = useState(() => initialSessionTimes().checkIn);
+  const [checkOutAt, setCheckOutAt] = useState(() => initialSessionTimes().checkOut);
   const [activity, setActivity] = useState<ActivityScoreResponse | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loadingScore, setLoadingScore] = useState(false);
+
+  const todayBounds = getTodayDatetimeLocalBounds();
+
+  useEffect(() => {
+    const onDayChange = () => {
+      const b = getTodayDatetimeLocalBounds();
+      setCheckInAt((prev) => {
+        const next = clampDatetimeLocalToBounds(prev, b.min, b.max);
+        setCheckOutAt((cout) =>
+          ensureCheckoutAfterCheckin(next, clampDatetimeLocalToBounds(cout, b.min, b.max), b.max),
+        );
+        return next;
+      });
+    };
+    const id = window.setInterval(onDayChange, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") onDayChange();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   const handleLogout = () => {
     try {
@@ -152,10 +183,12 @@ export default function StudentPortalPage() {
       if (!response.ok) {
         const local = computeLocalScore(targetStudentId, getLocalSessions(targetStudentId));
         setActivity(local);
+        setError("");
         return;
       }
       const data = (await response.json()) as ActivityScoreResponse;
       setActivity(data);
+      setError("");
     } catch (err) {
       const local = computeLocalScore(targetStudentId, getLocalSessions(targetStudentId));
       setActivity(local);
@@ -202,6 +235,32 @@ export default function StudentPortalPage() {
     }
     if (checkOutDate.getTime() <= checkInDate.getTime()) {
       setError(t("portal.error.invalidTimeOrder", "Check-out time must be later than check-in time."));
+      return;
+    }
+
+    const bounds = getTodayDatetimeLocalBounds();
+    if (
+      !isDatetimeLocalWithinTodayBounds(checkInAt, bounds) ||
+      !isDatetimeLocalWithinTodayBounds(checkOutAt, bounds)
+    ) {
+      setError(
+        t(
+          "portal.error.todayOnly",
+          "You can only log attendance for today. Past and future calendar days are not allowed.",
+        ),
+      );
+      return;
+    }
+
+    const nowMs = Date.now();
+    const clockSkewMs = 60_000;
+    if (checkInDate.getTime() > nowMs + clockSkewMs || checkOutDate.getTime() > nowMs + clockSkewMs) {
+      setError(
+        t(
+          "portal.error.futureTime",
+          "Check-in and check-out cannot be set in the future.",
+        ),
+      );
       return;
     }
 
@@ -364,8 +423,17 @@ export default function StudentPortalPage() {
                 <Input
                   id="checkInAt"
                   type="datetime-local"
+                  min={todayBounds.min}
+                  max={todayBounds.max}
                   value={checkInAt}
-                  onChange={(event) => setCheckInAt(event.target.value)}
+                  onChange={(event) => {
+                    const b = getTodayDatetimeLocalBounds();
+                    const cin = clampDatetimeLocalToBounds(event.target.value, b.min, b.max);
+                    setCheckInAt(cin);
+                    setCheckOutAt((cout) =>
+                      ensureCheckoutAfterCheckin(cin, clampDatetimeLocalToBounds(cout, b.min, b.max), b.max),
+                    );
+                  }}
                   className="h-11 rounded-xl border-[#e5e7eb] pl-10"
                 />
               </div>
@@ -380,8 +448,13 @@ export default function StudentPortalPage() {
                 <Input
                   id="checkOutAt"
                   type="datetime-local"
+                  min={todayBounds.min}
+                  max={todayBounds.max}
                   value={checkOutAt}
-                  onChange={(event) => setCheckOutAt(event.target.value)}
+                  onChange={(event) => {
+                    const b = getTodayDatetimeLocalBounds();
+                    setCheckOutAt(clampDatetimeLocalToBounds(event.target.value, b.min, b.max));
+                  }}
                   className="h-11 rounded-xl border-[#e5e7eb] pl-10"
                 />
               </div>

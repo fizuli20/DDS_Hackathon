@@ -30,6 +30,17 @@ export class StudentsService {
     if (durationMs <= 0) {
       throw new BadRequestException('Check-out time must be later than check-in time.');
     }
+
+    const tIn = checkInDate.getTime();
+    const tOut = checkOutDate.getTime();
+    const clockSkewMs = 60_000;
+    const nowMs = Date.now();
+    if (tIn > nowMs + clockSkewMs || tOut > nowMs + clockSkewMs) {
+      throw new BadRequestException('Check-in and check-out cannot be in the future.');
+    }
+    if (durationMs > 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('Session duration cannot exceed 24 hours.');
+    }
     const durationMinutes = Math.max(0, Math.round(durationMs / 60000));
 
     const existing = this.sessionsByStudent.get(normalizedStudentId) || [];

@@ -45,21 +45,25 @@ export default function RegisterPage() {
     }
 
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
     try {
-      localStorage.setItem(
-        "hspts_registered_user",
-        JSON.stringify({
-          fullName: safeFullName,
-          email: safeEmail,
-          password: safePassword,
-        }),
-      );
-    } catch {
-      // Ignore storage access issues in restricted browsers.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      try {
+        localStorage.setItem(
+          "hspts_registered_user",
+          JSON.stringify({
+            fullName: safeFullName,
+            email: safeEmail,
+            password: safePassword,
+          }),
+        );
+      } catch {
+        // Ignore storage access issues in restricted browsers.
+      }
+      router.push("/login");
+    } finally {
+      setIsSubmitting(false);
     }
-    router.push("/login");
   };
 
   return (

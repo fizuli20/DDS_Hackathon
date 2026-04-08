@@ -36,54 +36,55 @@ export default function LoginPage() {
     }
 
     setIsSubmitting(true);
-
-    // Placeholder auth flow for hackathon demo with role routing.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const isAdmin =
-      normalizedEmail === "admin@holbertonschool.com" &&
-      normalizedPassword === "8:39@#$%";
-
-    if (!isAdmin) {
-      let registeredUser:
-        | {
-            fullName?: string;
-            email?: string;
-            password?: string;
-          }
-        | null = null;
-      try {
-        const raw = localStorage.getItem("hspts_registered_user");
-        registeredUser = raw
-          ? (JSON.parse(raw) as { fullName?: string; email?: string; password?: string })
-          : null;
-      } catch {
-        registeredUser = null;
-      }
-
-      const validRegisteredLogin =
-        registeredUser &&
-        registeredUser.email?.trim().toLowerCase() === normalizedEmail &&
-        registeredUser.password === normalizedPassword;
-
-      if (!validRegisteredLogin) {
-        setError(t("auth.error.invalidCredentials", "Email or password is incorrect."));
-        setIsSubmitting(false);
-        return;
-      }
-    }
-
     try {
-      sessionStorage.setItem("hspts_auth", "true");
-      sessionStorage.setItem("hspts_user_email", normalizedEmail);
-      sessionStorage.setItem("hspts_user_role", isAdmin ? "admin" : "user");
-      // Remove legacy persistent auth keys.
-      localStorage.removeItem("hspts_auth");
-      localStorage.removeItem("hspts_user_email");
-      localStorage.removeItem("hspts_user_role");
-    } catch {
-      // Ignore storage access issues in restricted browsers.
+      // Placeholder auth flow for hackathon demo with role routing.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const isAdmin =
+        normalizedEmail === "admin@holbertonschool.com" &&
+        normalizedPassword === "8:39@#$%";
+
+      if (!isAdmin) {
+        let registeredUser:
+          | {
+              fullName?: string;
+              email?: string;
+              password?: string;
+            }
+          | null = null;
+        try {
+          const raw = localStorage.getItem("hspts_registered_user");
+          registeredUser = raw
+            ? (JSON.parse(raw) as { fullName?: string; email?: string; password?: string })
+            : null;
+        } catch {
+          registeredUser = null;
+        }
+
+        const validRegisteredLogin =
+          registeredUser &&
+          registeredUser.email?.trim().toLowerCase() === normalizedEmail &&
+          registeredUser.password === normalizedPassword;
+
+        if (!validRegisteredLogin) {
+          setError(t("auth.error.invalidCredentials", "Email or password is incorrect."));
+          return;
+        }
+      }
+
+      try {
+        sessionStorage.setItem("hspts_auth", "true");
+        sessionStorage.setItem("hspts_user_email", normalizedEmail);
+        sessionStorage.setItem("hspts_user_role", isAdmin ? "admin" : "user");
+        localStorage.removeItem("hspts_auth");
+        localStorage.removeItem("hspts_user_email");
+        localStorage.removeItem("hspts_user_role");
+      } catch {
+        // Ignore storage access issues in restricted browsers.
+      }
+      router.push(isAdmin ? "/admin" : "/student-portal");
+    } finally {
+      setIsSubmitting(false);
     }
-    router.push(isAdmin ? "/admin" : "/student-portal");
   };
 
   return (

@@ -104,6 +104,9 @@ const dictionary: Record<Language, Record<string, string>> = {
     "portal.error.invalidStudentId": "Tələbə ID formatı yanlışdır.",
     "portal.error.invalidDate": "Düzgün giriş/çıxış vaxtı daxil edin.",
     "portal.error.invalidTimeOrder": "Çıxış vaxtı giriş vaxtından sonra olmalıdır.",
+    "portal.error.todayOnly":
+      "Yalnız cari gün üçün qeydiyyat mümkündür. Keçmiş və gələcək təqvim günləri seçilə bilməz.",
+    "portal.error.futureTime": "Giriş və çıxış vaxtı gələcəyə təyin edilə bilməz.",
     "portal.studentIdPlaceholder": "hspts-1004",
     "reports.generatePdf": "PDF Yarat",
     "reports.exportExcel": "Excel İxrac et",
@@ -300,6 +303,9 @@ const dictionary: Record<Language, Record<string, string>> = {
     "portal.error.invalidStudentId": "Неверный формат ID студента.",
     "portal.error.invalidDate": "Укажите корректные время входа/выхода.",
     "portal.error.invalidTimeOrder": "Время выхода должно быть позже времени входа.",
+    "portal.error.todayOnly":
+      "Регистрация возможна только за текущий день. Прошлые и будущие календарные дни недоступны.",
+    "portal.error.futureTime": "Время входа и выхода не может быть в будущем.",
     "portal.studentIdPlaceholder": "hspts-1004",
     "reports.generatePdf": "Сформировать PDF",
     "reports.exportExcel": "Экспорт Excel",
@@ -496,6 +502,9 @@ const dictionary: Record<Language, Record<string, string>> = {
     "portal.error.invalidStudentId": "Student ID format is invalid.",
     "portal.error.invalidDate": "Please provide valid check-in/check-out times.",
     "portal.error.invalidTimeOrder": "Check-out time must be later than check-in time.",
+    "portal.error.todayOnly":
+      "You can only log attendance for today. Past and future calendar days are not allowed.",
+    "portal.error.futureTime": "Check-in and check-out cannot be set in the future.",
     "portal.studentIdPlaceholder": "hspts-1004",
     "reports.generatePdf": "Generate PDF",
     "reports.exportExcel": "Export Excel",
