@@ -160,6 +160,16 @@ export class AnalysisService {
     throw new BadGatewayException('Invalid Google Sheet URL.');
   }
 
+  private extractGid(sheetUrl: string): string {
+    const m = sheetUrl.match(/[#&?]gid=(\d+)/);
+    return m?.[1] ?? '0';
+  }
+
+  private looksLikeHtml(text: string): boolean {
+    const t = text.slice(0, 500).trim().toLowerCase();
+    return t.startsWith('<!doctype') || t.startsWith('<html') || t.includes('<html');
+  }
+
   private csvToRows(csvText: string): string[][] {
     const rows: string[][] = [];
     let current = '';
@@ -227,19 +237,46 @@ export class AnalysisService {
 
   private async loadSheetRows(sheetUrl: string) {
     const sheetId = this.extractSheetId(sheetUrl);
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
-    const response = await fetch(csvUrl);
-    if (!response.ok) {
-      throw new BadGatewayException(
-        'Failed to fetch Google Sheet. Ensure it is accessible.',
-      );
+    const gid = this.extractGid(sheetUrl);
+    const headers = {
+      'User-Agent':
+        'Mozilla/5.0 (compatible; HSPTS-Backend/1.0) Node.js fetch',
+      Accept: 'text/csv,text/plain,*/*',
+    };
+    const urls = [
+      `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
+    ];
+
+    let lastMessage =
+      'Failed to fetch Google Sheet. Publish it as “Anyone with the link can view” or check the URL.';
+
+    for (const csvUrl of urls) {
+      try {
+        const response = await fetch(csvUrl, { headers, redirect: 'follow' });
+        if (!response.ok) {
+          lastMessage = `Google returned HTTP ${response.status} for sheet export.`;
+          continue;
+        }
+        const csv = await response.text();
+        if (this.looksLikeHtml(csv)) {
+          lastMessage =
+            'Sheet returned HTML instead of CSV. Share the spreadsheet so anyone with the link can view it.';
+          continue;
+        }
+        const rows = this.csvToRows(csv);
+        if (rows.length >= 2) {
+          return rows;
+        }
+        lastMessage = 'Google Sheet has no data rows.';
+      } catch {
+        lastMessage = 'Network error while fetching Google Sheet.';
+      }
     }
-    const csv = await response.text();
-    const rows = this.csvToRows(csv);
-    if (rows.length < 2) {
-      throw new BadGatewayException('Google Sheet has no data rows.');
-    }
-    return rows;
+
+    throw new BadGatewayException(lastMessage);
   }
 
   private summarizeRows(rows: string[][]) {
@@ -424,15 +461,30 @@ export class AnalysisService {
       studentLines,
     ].join('\n');
 
-    const ai = await this.runOpenRouter(prompt, {
-      model: payload.model,
-      maxTokens: 1400,
-      temperature: 0.1,
-    });
+    let aiText = '';
+    let aiProvider = 'openrouter';
+    let aiModel = '';
+    let aiRequestId: string | null = null;
+    try {
+      const ai = await this.runOpenRouter(prompt, {
+        model: payload.model,
+        maxTokens: 1400,
+        temperature: 0.1,
+      });
+      aiText = ai.text;
+      aiProvider = ai.provider;
+      aiModel = ai.model;
+      aiRequestId = ai.requestId;
+    } catch {
+      aiText = '[]';
+      aiProvider = 'fallback';
+      aiModel = 'heuristic-trends';
+      aiRequestId = null;
+    }
 
     let parsed: AiTrendItem[] = [];
     try {
-      const cleaned = ai.text.trim().replace(/^```json\s*/i, '').replace(/```$/i, '');
+      const cleaned = aiText.trim().replace(/^```json\s*/i, '').replace(/```$/i, '');
       const json = JSON.parse(cleaned);
       if (Array.isArray(json)) {
         parsed = json
@@ -475,9 +527,9 @@ export class AnalysisService {
       },
       trends: parsed,
       aiMeta: {
-        provider: ai.provider,
-        model: ai.model,
-        requestId: ai.requestId,
+        provider: aiProvider,
+        model: aiModel,
+        requestId: aiRequestId,
       },
     };
   }

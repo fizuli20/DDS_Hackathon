@@ -272,12 +272,48 @@ export class DataSourcesService implements OnModuleInit, OnModuleDestroy {
     }
 
     const sheetId = this.extractSheetId(source.sheetUrl);
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
-    const response = await fetch(csvUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch sheet for source ${source.name}.`);
+    const gidMatch = source.sheetUrl.match(/[#&?]gid=(\d+)/);
+    const gid = gidMatch?.[1] ?? '0';
+    const fetchHeaders = {
+      'User-Agent':
+        'Mozilla/5.0 (compatible; HSPTS-DataSources/1.0) Node.js fetch',
+      Accept: 'text/csv,text/plain,*/*',
+    };
+    const urls = [
+      `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`,
+      `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
+    ];
+
+    let csv = '';
+    let lastError = `Failed to fetch sheet for source ${source.name}.`;
+    for (const csvUrl of urls) {
+      try {
+        const response = await fetch(csvUrl, { headers: fetchHeaders, redirect: 'follow' });
+        if (!response.ok) {
+          lastError = `HTTP ${response.status} for ${source.name}`;
+          continue;
+        }
+        const text = await response.text();
+        const t = text.slice(0, 500).trim().toLowerCase();
+        if (t.startsWith('<!doctype') || t.startsWith('<html') || t.includes('<html')) {
+          lastError = `Sheet ${source.name} returned HTML — share as “anyone with the link can view”.`;
+          continue;
+        }
+        const parsed = this.csvToRows(text);
+        if (parsed.length >= 2) {
+          csv = text;
+          break;
+        }
+        lastError = `No data rows in sheet ${source.name}.`;
+      } catch {
+        lastError = `Network error fetching ${source.name}.`;
+      }
     }
-    const csv = await response.text();
+    if (!csv) {
+      throw new Error(lastError);
+    }
     const rows = this.csvToRows(csv);
     if (rows.length < 2) {
       throw new Error(`No data rows found for source ${source.name}.`);
