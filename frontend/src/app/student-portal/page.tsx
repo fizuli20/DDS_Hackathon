@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { useI18n } from "@/lib/i18n";
+import { isValidStudentId, sanitizeTextInput } from "@/lib/sanitize";
 
 type ActivityScoreResponse = {
   studentId: string;
@@ -128,12 +129,6 @@ export default function StudentPortalPage() {
     }
   };
 
-  const sanitizeTextInput = (value: string) =>
-    value
-      .replace(/[<>]/g, "")
-      .replace(/[\u0000-\u001F\u007F]/g, "")
-      .trim();
-
   const validateNameField = (value: string) => namePattern.test(value);
 
   const canSubmit = useMemo(
@@ -194,6 +189,21 @@ export default function StudentPortalPage() {
       setError(t("portal.error.studentIdRequired", "Student ID cannot be empty."));
       return;
     }
+    if (!isValidStudentId(safeStudentId)) {
+      setError(t("portal.error.invalidStudentId", "Student ID format is invalid."));
+      return;
+    }
+
+    const checkInDate = new Date(checkInAt);
+    const checkOutDate = new Date(checkOutAt);
+    if (Number.isNaN(checkInDate.getTime()) || Number.isNaN(checkOutDate.getTime())) {
+      setError(t("portal.error.invalidDate", "Please provide valid check-in/check-out times."));
+      return;
+    }
+    if (checkOutDate.getTime() <= checkInDate.getTime()) {
+      setError(t("portal.error.invalidTimeOrder", "Check-out time must be later than check-in time."));
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -203,24 +213,22 @@ export default function StudentPortalPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            checkInAt: new Date(checkInAt).toISOString(),
-            checkOutAt: new Date(checkOutAt).toISOString(),
+            checkInAt: checkInDate.toISOString(),
+            checkOutAt: checkOutDate.toISOString(),
           }),
         },
       );
 
       if (!response.ok) {
         const local = getLocalSessions(safeStudentId);
-        const checkIn = new Date(checkInAt);
-        const checkOut = new Date(checkOutAt);
         const durationMinutes = Math.max(
           0,
-          Math.round((checkOut.getTime() - checkIn.getTime()) / 60000),
+          Math.round((checkOutDate.getTime() - checkInDate.getTime()) / 60000),
         );
         const next = [
           {
-            checkInAt: checkIn.toISOString(),
-            checkOutAt: checkOut.toISOString(),
+            checkInAt: checkInDate.toISOString(),
+            checkOutAt: checkOutDate.toISOString(),
             durationMinutes,
           },
           ...local,
@@ -229,8 +237,8 @@ export default function StudentPortalPage() {
         appendPortalActivity({
           studentId: safeStudentId,
           fullName: `${safeFirstName} ${safeLastName}`,
-          checkInAt: checkIn.toISOString(),
-          checkOutAt: checkOut.toISOString(),
+          checkInAt: checkInDate.toISOString(),
+          checkOutAt: checkOutDate.toISOString(),
           durationMinutes,
         });
         await fetchScore(safeStudentId);
@@ -240,11 +248,11 @@ export default function StudentPortalPage() {
       appendPortalActivity({
         studentId: safeStudentId,
         fullName: `${safeFirstName} ${safeLastName}`,
-        checkInAt: new Date(checkInAt).toISOString(),
-        checkOutAt: new Date(checkOutAt).toISOString(),
+        checkInAt: checkInDate.toISOString(),
+        checkOutAt: checkOutDate.toISOString(),
         durationMinutes: Math.max(
           0,
-          Math.round((new Date(checkOutAt).getTime() - new Date(checkInAt).getTime()) / 60000),
+          Math.round((checkOutDate.getTime() - checkInDate.getTime()) / 60000),
         ),
       });
       await fetchScore(safeStudentId);
@@ -310,7 +318,7 @@ export default function StudentPortalPage() {
           <form onSubmit={handleLogSession} className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-semibold text-[#111827]" htmlFor="firstName">
-                Name
+                {t("portal.firstName", "Name")}
               </label>
               <Input
                 id="firstName"
@@ -323,7 +331,7 @@ export default function StudentPortalPage() {
             </div>
             <div>
               <label className="mb-2 block text-sm font-semibold text-[#111827]" htmlFor="lastName">
-                Surname
+                {t("portal.lastName", "Surname")}
               </label>
               <Input
                 id="lastName"
@@ -342,7 +350,7 @@ export default function StudentPortalPage() {
                 id="studentId"
                 value={studentId}
                 onChange={(event) => setStudentId(event.target.value)}
-                placeholder="hspts-1004"
+                placeholder={t("portal.studentIdPlaceholder", "hspts-1004")}
                 className="h-11 rounded-xl border-[#e5e7eb]"
               />
             </div>
@@ -385,7 +393,7 @@ export default function StudentPortalPage() {
                 disabled={!canSubmit || submitting}
                 className="h-11 rounded-xl bg-[#F40F2C] px-5 text-white hover:bg-[#d60d28]"
               >
-                {submitting ? "..." : t("portal.saveTime", "Save time")}
+                {submitting ? t("common.submitting", "Submitting...") : t("portal.saveTime", "Save time")}
               </Button>
               <Button
                 type="button"
@@ -394,7 +402,9 @@ export default function StudentPortalPage() {
                 disabled={loadingScore || !studentId.trim()}
                 className="h-11 rounded-xl border-[#fecdd3] bg-white hover:bg-[#fff1f2]"
               >
-                {loadingScore ? "..." : t("portal.refreshScore", "Refresh activity score")}
+                {loadingScore
+                  ? t("common.loading", "Loading...")
+                  : t("portal.refreshScore", "Refresh activity score")}
               </Button>
             </div>
 

@@ -11,29 +11,38 @@ function buildTargetUrl(path: string[], search: string) {
 }
 
 async function proxy(request: NextRequest, path: string[]) {
-  const targetUrl = buildTargetUrl(path, request.nextUrl.search);
+  try {
+    const targetUrl = buildTargetUrl(path, request.nextUrl.search);
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete("host");
 
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.delete("host");
+    const hasBody = !["GET", "HEAD"].includes(request.method);
+    const response = await fetch(targetUrl, {
+      method: request.method,
+      headers: requestHeaders,
+      body: hasBody ? request.body : undefined,
+      redirect: "follow",
+      // Required when forwarding request.body streams in route handlers.
+      duplex: hasBody ? "half" : undefined,
+    } as RequestInit & { duplex?: "half" });
 
-  const hasBody = !["GET", "HEAD"].includes(request.method);
-  const response = await fetch(targetUrl, {
-    method: request.method,
-    headers: requestHeaders,
-    body: hasBody ? request.body : undefined,
-    redirect: "follow",
-    // Required when forwarding request.body streams in route handlers.
-    duplex: hasBody ? "half" : undefined,
-  } as RequestInit & { duplex?: "half" });
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.delete("content-encoding");
+    responseHeaders.delete("content-length");
 
-  const responseHeaders = new Headers(response.headers);
-  responseHeaders.delete("content-encoding");
-  responseHeaders.delete("content-length");
-
-  return new NextResponse(response.body, {
-    status: response.status,
-    headers: responseHeaders,
-  });
+    return new NextResponse(response.body, {
+      status: response.status,
+      headers: responseHeaders,
+    });
+  } catch {
+    return NextResponse.json(
+      {
+        message:
+          "Backend API is unreachable. Check BACKEND_API_URL and backend deployment health.",
+      },
+      { status: 502 },
+    );
+  }
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {

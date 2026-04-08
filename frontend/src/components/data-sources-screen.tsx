@@ -12,6 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
+import { sanitizeTextInput } from "@/lib/sanitize";
+import { DEFAULT_GOOGLE_SHEET_URL } from "@/lib/sheet-config";
 
 type DataSource = {
   id: string;
@@ -27,6 +29,31 @@ type DataSource = {
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
+function resolveApiErrorMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") return fallback;
+  const candidate = payload as { message?: unknown; error?: unknown };
+  if (Array.isArray(candidate.message)) {
+    return candidate.message.map((item) => String(item)).join(" ");
+  }
+  if (typeof candidate.message === "string" && candidate.message.trim()) {
+    return candidate.message;
+  }
+  if (typeof candidate.error === "string" && candidate.error.trim()) {
+    return candidate.error;
+  }
+  return fallback;
+}
+
+async function parseApiError(response: Response, fallback: string) {
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  return resolveApiErrorMessage(payload, fallback);
+}
+
 export function DataSourcesScreen() {
   const { t } = useI18n();
   const [sources, setSources] = useState<DataSource[]>([]);
@@ -41,7 +68,7 @@ export function DataSourcesScreen() {
   const [cohortFilter, setCohortFilter] = useState("all");
   const [form, setForm] = useState({
     name: "",
-    sheetUrl: "",
+    sheetUrl: DEFAULT_GOOGLE_SHEET_URL,
     type: "combined",
     cohort: "",
     customCohort: "",
@@ -54,7 +81,7 @@ export function DataSourcesScreen() {
     setLoading(true);
     try {
       const response = await fetch(`${apiBaseUrl}/data-sources`);
-      if (!response.ok) throw new Error("Failed to load data sources.");
+      if (!response.ok) throw new Error(await parseApiError(response, "Failed to load data sources."));
       const data = (await response.json()) as DataSource[];
       setSources(data);
     } catch (err) {
@@ -68,7 +95,7 @@ export function DataSourcesScreen() {
     const normalized = cohort && cohort !== "all" ? cohort.trim() : "";
     const query = normalized ? `?cohort=${encodeURIComponent(normalized)}` : "";
     const response = await fetch(`${apiBaseUrl}/data-sources/aggregate${query}`);
-    if (!response.ok) throw new Error("Failed to load aggregate.");
+    if (!response.ok) throw new Error(await parseApiError(response, "Failed to load aggregate."));
     const data = await response.json();
     setAggregate(data);
   };
@@ -95,21 +122,54 @@ export function DataSourcesScreen() {
     setSaving(true);
     try {
       const parsedMapping = JSON.parse(form.mappingJson) as Record<string, string>;
+      const safeMapping = Object.entries(parsedMapping).reduce<Record<string, string>>((acc, [key, value]) => {
+        const safeKey = sanitizeTextInput(String(key));
+        const safeValue = sanitizeTextInput(String(value));
+        if (safeKey && safeValue) {
+          acc[safeKey] = safeValue;
+        }
+        return acc;
+      }, {});
+      const safeName = sanitizeTextInput(form.name);
+      const safeSheetUrl = sanitizeTextInput(form.sheetUrl);
+      const safeType = sanitizeTextInput(form.type).toLowerCase();
+      const safeCohort = sanitizeTextInput(resolvedFormCohort);
+
+      if (!safeName || !safeSheetUrl || !safeType) {
+        throw new Error("Please fill required fields.");
+      }
+      try {
+        const parsed = new URL(safeSheetUrl);
+        if (!parsed.protocol.startsWith("http")) {
+          throw new Error("Invalid URL protocol.");
+        }
+      } catch {
+        throw new Error("Invalid Sheet URL.");
+      }
+
       const response = await fetch(`${apiBaseUrl}/data-sources`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: form.name,
-          sheetUrl: form.sheetUrl,
-          type: form.type,
-          cohort: resolvedFormCohort || undefined,
+          name: safeName,
+          sheetUrl: safeSheetUrl,
+          type: safeType,
+          cohort: safeCohort || undefined,
           priority: Number(form.priority) || 100,
           active: true,
-          columnMapping: parsedMapping,
+          columnMapping: safeMapping,
         }),
       });
-      if (!response.ok) throw new Error("Failed to create source.");
-      setForm((prev) => ({ ...prev, name: "", sheetUrl: "", cohort: "", customCohort: "" }));
+      if (!response.ok) {
+        throw new Error(await parseApiError(response, "Failed to create source."));
+      }
+      setForm((prev) => ({
+        ...prev,
+        name: "",
+        sheetUrl: DEFAULT_GOOGLE_SHEET_URL,
+        cohort: "",
+        customCohort: "",
+      }));
       await fetchSources();
       await fetchAggregate(cohortFilter);
     } catch (err) {
@@ -123,7 +183,7 @@ export function DataSourcesScreen() {
     setError("");
     try {
       const response = await fetch(`${apiBaseUrl}/data-sources/sync/all`, { method: "POST" });
-      if (!response.ok) throw new Error("Failed to sync sources.");
+      if (!response.ok) throw new Error(await parseApiError(response, "Failed to sync sources."));
       await fetchSources();
       await fetchAggregate(cohortFilter);
     } catch (err) {
@@ -135,7 +195,7 @@ export function DataSourcesScreen() {
     setError("");
     try {
       const response = await fetch(`${apiBaseUrl}/data-sources/${id}/sync`, { method: "POST" });
-      if (!response.ok) throw new Error("Failed to sync source.");
+      if (!response.ok) throw new Error(await parseApiError(response, "Failed to sync source."));
       await fetchSources();
       await fetchAggregate(cohortFilter);
     } catch (err) {

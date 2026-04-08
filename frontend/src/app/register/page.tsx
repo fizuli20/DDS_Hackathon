@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { sanitizeTextInput } from "@/lib/sanitize";
 
 export default function RegisterPage() {
   const { t } = useI18n();
@@ -23,17 +24,22 @@ export default function RegisterPage() {
     event.preventDefault();
     setError("");
 
-    if (!fullName.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
+    const safeFullName = sanitizeTextInput(fullName);
+    const safeEmail = sanitizeTextInput(email).toLowerCase();
+    const safePassword = sanitizeTextInput(password);
+    const safeConfirmPassword = sanitizeTextInput(confirmPassword);
+
+    if (!safeFullName || !safeEmail || !safePassword || !safeConfirmPassword) {
       setError(t("auth.error.fillAll", "Please fill in all fields."));
       return;
     }
 
-    if (password.length < 6) {
+    if (safePassword.length < 6) {
       setError(t("auth.error.passwordMin", "Password must be at least 6 characters."));
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (safePassword !== safeConfirmPassword) {
       setError(t("auth.error.passwordMismatch", "Passwords do not match."));
       return;
     }
@@ -45,9 +51,9 @@ export default function RegisterPage() {
       localStorage.setItem(
         "hspts_registered_user",
         JSON.stringify({
-          fullName: fullName.trim(),
-          email: email.trim().toLowerCase(),
-          password,
+          fullName: safeFullName,
+          email: safeEmail,
+          password: safePassword,
         }),
       );
     } catch {
@@ -107,7 +113,7 @@ export default function RegisterPage() {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@holbertonschool.com"
+                placeholder={t("auth.emailPlaceholder", "you@holbertonschool.com")}
                 className="h-11 rounded-xl border-[#e5e7eb] bg-white pl-10 focus-visible:ring-[#F40F2C]"
                 autoComplete="email"
               />
@@ -157,7 +163,7 @@ export default function RegisterPage() {
             disabled={isSubmitting}
             className="h-11 w-full rounded-xl bg-[#F40F2C] text-white hover:bg-[#d60d28]"
           >
-            {isSubmitting ? "..." : t("auth.register", "Register")}
+            {isSubmitting ? t("common.submitting", "Submitting...") : t("auth.register", "Register")}
             <ArrowRight className="h-4 w-4" />
           </Button>
         </form>

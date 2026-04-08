@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { jsPDF } from "jspdf";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -60,6 +61,7 @@ import {
 } from "@/lib/hspts-data";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { DEFAULT_GOOGLE_SHEET_URL } from "@/lib/sheet-config";
 
 const colors = {
   primary: "#F40F2C",
@@ -109,8 +111,7 @@ function useSheetDataset() {
       setLoading(true);
       try {
         const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
-        const sheetUrl =
-          "https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing";
+        const sheetUrl = DEFAULT_GOOGLE_SHEET_URL;
         const response = await fetch(
           `${apiBaseUrl}/analysis/google-sheet-data?sheetUrl=${encodeURIComponent(sheetUrl)}`,
         );
@@ -146,8 +147,7 @@ function useSheetTrends() {
     const run = async () => {
       try {
         const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
-        const sheetUrl =
-          "https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing";
+        const sheetUrl = DEFAULT_GOOGLE_SHEET_URL;
         const response = await fetch(`${apiBaseUrl}/analysis/google-sheet-trends`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -563,9 +563,12 @@ export function OverviewScreen({
     <div className="space-y-6">
       <SectionReveal>
         <PageHeader
-          eyebrow="Holberton Student Performance Tracking System"
-          title={`Operational clarity for ${universityName ?? "Holberton School"}`}
-          description="A red-accented, mentor-first analytics cockpit for risk sensing, score movement, and cohort momentum. The layout leans into clean surfaces, decisive status cues, and data blocks that feel board-ready instead of generic."
+          eyebrow={t("overview.eyebrow", "Holberton Student Performance Tracking System")}
+          title={`${t("overview.operationalClarityFor", "Operational clarity for")} ${universityName ?? "Holberton School"}`}
+          description={t(
+            "overview.description",
+            "A red-accented, mentor-first analytics cockpit for risk sensing, score movement, and cohort momentum.",
+          )}
           actions={
             <>
               <Button
@@ -591,28 +594,32 @@ export function OverviewScreen({
 
       <SectionReveal delay={0.08} className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Total students"
+          title={t("overview.totalStudents", "Total students")}
           value={String(sheetSummary?.totalStudents ?? totalStudents)}
-          subtitle={sheetLoading ? "Loading from Google Sheet..." : "Synced from Google Sheet"}
+          subtitle={
+            sheetLoading
+              ? t("overview.loadingFromSheet", "Loading from Google Sheet...")
+              : t("overview.syncedFromSheet", "Synced from Google Sheet")
+          }
           accent="primary"
           icon={<UserRound className="h-5 w-5" />}
         />
         <MetricCard
-          title="At-risk students"
+          title={t("overview.atRiskStudents", "At-risk students")}
           value={String(riskChartData.find((item) => item.name === "At-Risk")?.value ?? 0)}
-          subtitle="Immediate mentor review required"
+          subtitle={t("overview.mentorReviewRequired", "Immediate mentor review required")}
           accent="danger"
           icon={<ShieldAlert className="h-5 w-5" />}
         />
         <MetricCard
-          title="Average score"
+          title={t("overview.averageScore", "Average score")}
           value={`${Math.round(sheetSummary?.averages.overall ?? 82)}%`}
-          subtitle="Calculated from current sheet data"
+          subtitle={t("overview.calculatedFromSheet", "Calculated from current sheet data")}
           accent="success"
           icon={<TrendingUp className="h-5 w-5" />}
         />
         <MetricCard
-          title="Active cohorts"
+          title={t("overview.activeCohorts", "Active cohorts")}
           value="4"
           subtitle="Atlas, Nova, Pulse, Horizon"
           accent="warning"
@@ -627,14 +634,14 @@ export function OverviewScreen({
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
-                    Risk distribution
+                    {t("overview.riskDistribution", "Risk distribution")}
                   </p>
                   <CardTitle className="mt-2 text-2xl font-black tracking-tight text-[#111827]">
-                    Cohort health split
+                    {t("overview.cohortHealthSplit", "Cohort health split")}
                   </CardTitle>
                 </div>
                 <div className="rounded-full bg-[#fff1f2] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[#F40F2C]">
-                  red priority
+                  {t("overview.redPriority", "red priority")}
                 </div>
               </div>
             </CardHeader>
@@ -864,10 +871,10 @@ export function OverviewScreen({
             <CardContent className="p-0">
               <div className="border-b border-[#f1f5f9] bg-[linear-gradient(180deg,_rgba(244,15,44,0.08),_rgba(255,255,255,0)_90%)] p-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
-                  Mentor signal
+                  {t("overview.mentorSignal", "Mentor signal")}
                 </p>
                 <h3 className="mt-3 text-2xl font-black tracking-tight text-[#111827]">
-                  Intervention stack
+                  {t("overview.interventionStack", "Intervention stack")}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-[#6b7280]">
                   The risk story is driven less by technical ability and more by rhythm:
@@ -877,23 +884,23 @@ export function OverviewScreen({
               <div className="space-y-4 p-6">
                 {[
                   {
-                    label: "High urgency",
+                    label: t("overview.highUrgency", "High urgency"),
                     value: "8",
-                    note: "Needs mentor contact within 24h",
+                    note: t("overview.highUrgencyNote", "Needs mentor contact within 24h"),
                     icon: <Flame className="h-4 w-4" />,
                     tone: "danger",
                   },
                   {
-                    label: "Recovery plans active",
+                    label: t("overview.recoveryPlansActive", "Recovery plans active"),
                     value: "12",
-                    note: "Structured weekly intervention in progress",
+                    note: t("overview.recoveryPlansNote", "Structured weekly intervention in progress"),
                     icon: <BookCheck className="h-4 w-4" />,
                     tone: "primary",
                   },
                   {
-                    label: "Alerts cleared",
+                    label: t("overview.alertsCleared", "Alerts cleared"),
                     value: "21",
-                    note: "Students moved out of red over 30 days",
+                    note: t("overview.alertsClearedNote", "Students moved out of red over 30 days"),
                     icon: <Sparkles className="h-4 w-4" />,
                     tone: "success",
                   },
@@ -986,6 +993,32 @@ export function StudentsScreen() {
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const syncFromUrl = () => {
+      setSearch(new URLSearchParams(window.location.search).get("q") ?? "");
+    };
+    syncFromUrl();
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const onGlobalSearch = (event: Event) => {
+      const custom = event as CustomEvent<{ value?: string }>;
+      setSearch(custom.detail?.value ?? "");
+    };
+    window.addEventListener("hspts-global-search", onGlobalSearch as EventListener);
+    return () => {
+      window.removeEventListener("hspts-global-search", onGlobalSearch as EventListener);
+    };
+  }, []);
+
   const roster = useMemo(() => {
     if (!sheetSummary?.students?.length) {
       return [];
@@ -1007,16 +1040,19 @@ export function StudentsScreen() {
         riskLevel: toRiskLevel(student.overall),
         trend: (aiTrend?.trend ?? (delta > 0 ? "up" : delta < 0 ? "down" : "stable")) as Trend,
         weeklyDelta: aiTrend?.delta ?? delta,
-        trendReason: aiTrend?.reason ?? "Trend based on score distance from average.",
+        trendReason:
+          aiTrend?.reason ??
+          t("students.trendReasonFallback", "Trend based on score distance from average."),
       };
     });
-  }, [sheetSummary, aiTrendMap]);
+  }, [sheetSummary, aiTrendMap, t]);
 
   const normalizedSearch = deferredSearch.trim().toLowerCase();
   const filteredStudents = roster.filter((student) => {
-    const matchesCohort = cohort === "All Cohorts" || student.cohort === cohort;
-    const matchesTrack = track === "All Tracks" || student.track === track;
-    const matchesRisk = riskLevel === "All Risk Levels" || student.riskLevel === riskLevel;
+    const matchesCohort = cohort === t("students.allCohorts", "All Cohorts") || student.cohort === cohort;
+    const matchesTrack = track === t("students.allTracks", "All Tracks") || student.track === track;
+    const matchesRisk =
+      riskLevel === t("students.allRiskLevels", "All Risk Levels") || student.riskLevel === riskLevel;
     const matchesSearch =
       !normalizedSearch ||
       [student.id, student.name, student.mentor, student.track, student.cohort]
@@ -1027,22 +1063,48 @@ export function StudentsScreen() {
     return matchesCohort && matchesTrack && matchesRisk && matchesSearch;
   });
 
+  const handleExportFiltered = () => {
+    const csv = [
+      "student_id,name,track,cohort,overall_score,risk,trend,weekly_delta",
+      ...filteredStudents.map((student) =>
+        [
+          student.id,
+          `"${student.name.replace(/"/g, '""')}"`,
+          `"${student.track.replace(/"/g, '""')}"`,
+          `"${student.cohort.replace(/"/g, '""')}"`,
+          String(student.overallScore),
+          `"${student.riskLevel}"`,
+          `"${student.trend}"`,
+          String(student.weeklyDelta),
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `hspts-filtered-students-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <SectionReveal>
         <PageHeader
-          eyebrow="Learner intelligence"
-          title="Student roster with high-signal filtering"
-          description="A sharp, mentor-usable roster that puts risk color, score gravity, and momentum cues ahead of noise. Strong learners stay calm and green; at-risk learners are impossible to miss."
+          eyebrow={t("students.eyebrow", "Learner intelligence")}
+          title={t("students.title", "Student roster with high-signal filtering")}
+          description={t(
+            "students.description",
+            "A sharp, mentor-usable roster that puts risk color, score gravity, and momentum cues ahead of noise. Strong learners stay calm and green; at-risk learners are impossible to miss.",
+          )}
           actions={
             <Button
-              asChild
+              onClick={handleExportFiltered}
               className="h-11 rounded-xl bg-[#F40F2C] px-5 text-white shadow-[0_18px_40px_-20px_rgba(244,15,44,0.8)] hover:bg-[#d60d28]"
             >
-              <Link href="/reports">
-                Export filtered view
-                <Download className="h-4 w-4" />
-              </Link>
+              {t("students.exportFiltered", "Export filtered view")}
+              <Download className="h-4 w-4" />
             </Button>
           }
         />
@@ -1053,10 +1115,10 @@ export function StudentsScreen() {
           <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1.2fr]">
             <Select value={cohort} onValueChange={setCohort}>
               <SelectTrigger className="h-12 rounded-xl border-[#e5e7eb] bg-white text-[#111827] focus:ring-[#F40F2C]">
-                <SelectValue placeholder="Cohort" />
+                <SelectValue placeholder={t("table.cohort", "Cohort")} />
               </SelectTrigger>
               <SelectContent className="border-[#e5e7eb] bg-white text-[#111827]">
-                {["All Cohorts", ...new Set(roster.map((student) => student.cohort))].map((option) => (
+                {[t("students.allCohorts", "All Cohorts"), ...new Set(roster.map((student) => student.cohort))].map((option) => (
                   <SelectItem key={option} value={option} className="focus:bg-[#fff1f2] focus:text-[#111827]">
                     {option}
                   </SelectItem>
@@ -1066,10 +1128,10 @@ export function StudentsScreen() {
 
             <Select value={track} onValueChange={setTrack}>
               <SelectTrigger className="h-12 rounded-xl border-[#e5e7eb] bg-white text-[#111827] focus:ring-[#F40F2C]">
-                <SelectValue placeholder="Track" />
+                <SelectValue placeholder={t("table.track", "Track")} />
               </SelectTrigger>
               <SelectContent className="border-[#e5e7eb] bg-white text-[#111827]">
-                {["All Tracks", ...new Set(roster.map((student) => student.track))].map((option) => (
+                {[t("students.allTracks", "All Tracks"), ...new Set(roster.map((student) => student.track))].map((option) => (
                   <SelectItem key={option} value={option} className="focus:bg-[#fff1f2] focus:text-[#111827]">
                     {option}
                   </SelectItem>
@@ -1079,10 +1141,10 @@ export function StudentsScreen() {
 
             <Select value={riskLevel} onValueChange={setRiskLevel}>
               <SelectTrigger className="h-12 rounded-xl border-[#e5e7eb] bg-white text-[#111827] focus:ring-[#F40F2C]">
-                <SelectValue placeholder="Risk level" />
+                <SelectValue placeholder={t("students.riskLevel", "Risk level")} />
               </SelectTrigger>
               <SelectContent className="border-[#e5e7eb] bg-white text-[#111827]">
-                {["All Risk Levels", ...new Set(roster.map((student) => student.riskLevel))].map((option) => (
+                {[t("students.allRiskLevels", "All Risk Levels"), ...new Set(roster.map((student) => student.riskLevel))].map((option) => (
                   <SelectItem key={option} value={option} className="focus:bg-[#fff1f2] focus:text-[#111827]">
                     {option}
                   </SelectItem>
@@ -1111,7 +1173,10 @@ export function StudentsScreen() {
             ) : null}
             {!sheetLoading && filteredStudents.length === 0 ? (
               <p className="text-sm text-[#b91c1c]">
-                Sheet data is unavailable. Please check backend and sheet access.
+                {t(
+                  "students.sheetUnavailable",
+                  "Sheet data is unavailable. Please check backend and sheet access.",
+                )}
               </p>
             ) : null}
             <table className="min-w-full border-separate border-spacing-y-3">
@@ -1177,7 +1242,10 @@ export function StudentsScreen() {
           <HsptsCard>
             <CardContent className="p-5">
               <p className="text-sm text-[#b91c1c]">
-                Sheet data is unavailable. Please check backend and sheet access.
+                {t(
+                  "students.sheetUnavailable",
+                  "Sheet data is unavailable. Please check backend and sheet access.",
+                )}
               </p>
             </CardContent>
           </HsptsCard>
@@ -1345,16 +1413,19 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
     { label: "PLD", score: student.breakdown.pld },
     { label: "Exam", score: student.breakdown.exam },
     { label: "Tasks", score: student.breakdown.tasks },
-    { label: "Attendance", score: student.breakdown.attendance },
+    { label: t("profile.attendance", "Attendance"), score: student.breakdown.attendance },
   ];
 
   return (
     <div className="space-y-6">
       <SectionReveal>
         <PageHeader
-          eyebrow="Student profile"
-          title={`${student.name} performance deep dive`}
-          description="A profile view designed to help mentors move from signal to action fast: score ring, multidimensional breakdown, timeline, and a six-week trendline built for intervention conversations."
+          eyebrow={t("profile.eyebrow", "Student profile")}
+          title={`${student.name} ${t("profile.performanceDeepDive", "performance deep dive")}`}
+          description={t(
+            "profile.description",
+            "A profile view designed to help mentors move from signal to action fast: score ring, multidimensional breakdown, timeline, and a six-week trendline built for intervention conversations.",
+          )}
           actions={
             <>
               <Button
@@ -1362,8 +1433,8 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
                 className="h-11 rounded-xl bg-[#F40F2C] px-5 text-white shadow-[0_18px_40px_-20px_rgba(244,15,44,0.8)] hover:bg-[#d60d28]"
               >
                 <Link href="/reports">
-                  {t("reports.generatePdf", "Generate PDF")}
-                  <Download className="h-4 w-4" />
+                  {t("profile.openReports", "Open reports")}
+                  <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
               <Button
@@ -1393,7 +1464,7 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
                       {student.name}
                     </h2>
                     <p className="mt-2 text-sm text-[#6b7280]">
-                      {student.track} · {student.cohort} · Mentor {student.mentor}
+                      {student.track} · {student.cohort} · {t("profile.mentor", "Mentor")} {student.mentor}
                     </p>
                   </div>
                 </div>
@@ -1405,10 +1476,10 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
                   <ScoreRing score={student.overallScore} delta={student.weeklyDelta} />
                 </Surface>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <ProfileInsight label="Mentor" value={student.mentor} />
-                  <ProfileInsight label="City" value={student.city} />
-                  <ProfileInsight label="Attendance" value={`${student.attendanceRate}%`} />
-                  <ProfileInsight label="Focus note" value={student.focus} />
+                  <ProfileInsight label={t("profile.mentor", "Mentor")} value={student.mentor} />
+                  <ProfileInsight label={t("profile.city", "City")} value={student.city} />
+                  <ProfileInsight label={t("profile.attendance", "Attendance")} value={`${student.attendanceRate}%`} />
+                  <ProfileInsight label={t("profile.focusNote", "Focus note")} value={student.focus} />
                 </div>
               </div>
             </CardContent>
@@ -1419,10 +1490,10 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
           <HsptsCard className="h-full">
             <CardHeader className="pb-2">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
-                Skill radar
+                {t("profile.skillRadar", "Skill radar")}
               </p>
               <CardTitle className="mt-2 text-2xl font-black tracking-tight text-[#111827]">
-                Breakdown by dimension
+                {t("profile.breakdownByDimension", "Breakdown by dimension")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1447,7 +1518,7 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
                   ["PLD", student.breakdown.pld],
                   ["Exam", student.breakdown.exam],
                   ["Tasks", student.breakdown.tasks],
-                  ["Attendance", student.breakdown.attendance],
+                  [t("profile.attendance", "Attendance"), student.breakdown.attendance],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <div className="mb-2 flex items-center justify-between text-sm">
@@ -1473,10 +1544,10 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
           <HsptsCard>
             <CardHeader className="pb-2">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
-                Activity timeline
+                {t("profile.activityTimeline", "Activity timeline")}
               </p>
               <CardTitle className="mt-2 text-2xl font-black tracking-tight text-[#111827]">
-                Recent learner events
+                {t("profile.recentEvents", "Recent learner events")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -1507,10 +1578,10 @@ export function StudentProfileScreen({ studentId }: { studentId: string }) {
           <HsptsCard>
             <CardHeader className="pb-2">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6b7280]">
-                Score history
+                {t("profile.scoreHistory", "Score history")}
               </p>
               <CardTitle className="mt-2 text-2xl font-black tracking-tight text-[#111827]">
-                Six-week score movement
+                {t("profile.sixWeekMovement", "Six-week score movement")}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1591,9 +1662,7 @@ export function ReportsScreen() {
   const [selected, setSelected] = useState("weekly");
   const activePreset = localizedPresets.find((preset) => preset.id === selected) ?? localizedPresets[0];
   const nowLabel = new Date().toISOString().slice(0, 10);
-  const [sheetUrl, setSheetUrl] = useState(
-    "https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing",
-  );
+  const [sheetUrl, setSheetUrl] = useState(DEFAULT_GOOGLE_SHEET_URL);
   const [aiInsights, setAiInsights] = useState("");
   const [aiReport, setAiReport] = useState("");
   const [generatedReports, setGeneratedReports] = useState<Record<string, string>>({});
@@ -1626,11 +1695,26 @@ export function ReportsScreen() {
       currentGeneratedReport ||
         t("reports.noAiYet", "No AI report generated yet. Use 'Generate AI student report'."),
     ];
-    downloadFile(
-      `hspts-${preset.id}-${nowLabel}.pdf`,
-      lines.join("\n"),
-      "application/pdf",
-    );
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const left = 40;
+    const top = 50;
+    const maxWidth = 515;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(`HSPTS Report: ${preset.title}`, left, top);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    let y = top + 24;
+    for (const line of lines.slice(1)) {
+      const wrapped = doc.splitTextToSize(line, maxWidth);
+      doc.text(wrapped, left, y);
+      y += wrapped.length * 14;
+      if (y > 770) {
+        doc.addPage();
+        y = 50;
+      }
+    }
+    doc.save(`hspts-${preset.id}-${nowLabel}.pdf`);
   };
 
   const handleExcelExport = (preset: { id: string }) => {
@@ -1663,7 +1747,17 @@ export function ReportsScreen() {
       body: JSON.stringify({ sheetUrl, ...payload }),
     });
     if (!response.ok) {
-      throw new Error(t("reports.aiEndpointFailed", "AI endpoint failed."));
+      let detail = "";
+      try {
+        const errorPayload = (await response.json()) as { message?: string };
+        detail = errorPayload?.message?.trim() || "";
+      } catch {
+        // noop
+      }
+      throw new Error(
+        detail ||
+          t("reports.aiEndpointFailed", "AI endpoint failed."),
+      );
     }
     return response.json() as Promise<{
       ai?: { text?: string };
@@ -1684,8 +1778,12 @@ export function ReportsScreen() {
         ? `${t("reports.totalStudents", "Total students")}: ${data.summary.totalStudents}, ${t("reports.avgOverall", "Average overall")}: ${data.summary.averages.overall}`
         : "";
       setAiInsights([summaryPart, data.ai?.text || ""].filter(Boolean).join("\n\n"));
-    } catch {
-      setAiError(t("reports.aiAnalysisFailed", "AI analysis failed. Check backend and OPENROUTER_API_KEY."));
+    } catch (err) {
+      setAiError(
+        err instanceof Error && err.message
+          ? err.message
+          : t("reports.aiAnalysisFailed", "AI analysis failed. Check backend and OPENROUTER_API_KEY."),
+      );
     } finally {
       setLoadingInsights(false);
     }
@@ -1699,9 +1797,11 @@ export function ReportsScreen() {
       const text = data.report?.text || "";
       setAiReport(text);
       setGeneratedReports((prev) => ({ ...prev, [selected]: text }));
-    } catch {
+    } catch (err) {
       setAiError(
-        t("reports.aiReportFailed", "AI report generation failed. Check backend and OPENROUTER_API_KEY."),
+        err instanceof Error && err.message
+          ? err.message
+          : t("reports.aiReportFailed", "AI report generation failed. Check backend and OPENROUTER_API_KEY."),
       );
     } finally {
       setLoadingReport(false);

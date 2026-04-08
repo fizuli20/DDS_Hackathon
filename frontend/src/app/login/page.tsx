@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { sanitizeTextInput } from "@/lib/sanitize";
 
 export default function LoginPage() {
   const { t } = useI18n();
@@ -21,8 +22,8 @@ export default function LoginPage() {
     event.preventDefault();
     setError("");
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedPassword = password.trim();
+    const normalizedEmail = sanitizeTextInput(email).toLowerCase();
+    const normalizedPassword = sanitizeTextInput(password);
 
     if (!normalizedEmail || !normalizedPassword) {
       setError(t("auth.error.requiredLogin", "Email and password are required."));
@@ -119,7 +120,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@holbertonschool.com"
+                placeholder={t("auth.emailPlaceholder", "you@holbertonschool.com")}
                 className="h-11 rounded-xl border-[#e5e7eb] bg-white pl-10 focus-visible:ring-[#F40F2C]"
                 autoComplete="email"
               />
@@ -137,7 +138,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="********"
+                placeholder={t("auth.passwordPlaceholder", "********")}
                 className="h-11 rounded-xl border-[#e5e7eb] bg-white pl-10 focus-visible:ring-[#F40F2C]"
                 autoComplete="current-password"
               />
@@ -151,7 +152,7 @@ export default function LoginPage() {
             disabled={isSubmitting}
             className="h-11 w-full rounded-xl bg-[#F40F2C] text-white hover:bg-[#d60d28]"
           >
-            {isSubmitting ? "..." : t("auth.signIn", "Sign In")}
+            {isSubmitting ? t("common.submitting", "Submitting...") : t("auth.signIn", "Sign In")}
             <ArrowRight className="h-4 w-4" />
           </Button>
         </form>

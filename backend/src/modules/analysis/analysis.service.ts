@@ -34,6 +34,56 @@ type AiTrendItem = {
 
 @Injectable()
 export class AnalysisService {
+  private readonly defaultSheetUrl =
+    process.env.GOOGLE_SHEET_URL ||
+    'https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing';
+
+  private resolveSheetUrl(raw?: string) {
+    const candidate = raw?.trim();
+    return candidate && candidate.length > 0 ? candidate : this.defaultSheetUrl;
+  }
+
+  private fallbackInsightsText(summary: {
+    totalStudents: number;
+    averages: { pld: number; task: number; exam: number; attendance: number; overall: number };
+    weakestStudents: string[];
+  }) {
+    return [
+      `Total students: ${summary.totalStudents}`,
+      `Average overall: ${summary.averages.overall}`,
+      `Average attendance: ${summary.averages.attendance}`,
+      '',
+      'Top intervention priorities:',
+      ...summary.weakestStudents.slice(0, 3).map((line) => `- ${line}`),
+      '',
+      'Action: Run weekly mentor check-ins for at-risk learners and monitor attendance/task completion.',
+    ].join('\n');
+  }
+
+  private fallbackReportText(
+    summary: {
+      totalStudents: number;
+      averages: { pld: number; task: number; exam: number; attendance: number; overall: number };
+      weakestStudents: string[];
+    },
+    reportType: string,
+  ) {
+    return [
+      `Executive summary (${reportType}):`,
+      `- Students tracked: ${summary.totalStudents}`,
+      `- Avg overall: ${summary.averages.overall}`,
+      `- Avg attendance: ${summary.averages.attendance}`,
+      '',
+      'Risk diagnostics:',
+      ...summary.weakestStudents.slice(0, 5).map((line) => `- ${line}`),
+      '',
+      'Weekly action plan:',
+      '- Prioritize mentor outreach to weakest students within 24 hours.',
+      '- Assign focused PLD/task recovery plans with measurable goals.',
+      '- Review attendance dips and enforce daily check-ins.',
+    ].join('\n');
+  }
+
   private async runOpenRouter(
     prompt: string,
     options?: { model?: string; temperature?: number; maxTokens?: number },
@@ -254,10 +304,7 @@ export class AnalysisService {
   }
 
   async analyzeGoogleSheet(payload: GoogleSheetAnalysisDto) {
-    const sheetUrl =
-      payload.sheetUrl ||
-      process.env.GOOGLE_SHEET_URL ||
-      'https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing';
+    const sheetUrl = this.resolveSheetUrl(payload.sheetUrl);
     const rows = await this.loadSheetRows(sheetUrl);
     const summary = this.summarizeRows(rows);
 
@@ -273,11 +320,22 @@ export class AnalysisService {
       'Return concise action points for mentors and admin.',
     ].join('\n');
 
-    const ai = await this.runOpenRouter(prompt, {
-      model: payload.model,
-      maxTokens: 900,
-      temperature: 0.2,
-    });
+    let ai: Awaited<ReturnType<typeof this.runOpenRouter>>;
+    try {
+      ai = await this.runOpenRouter(prompt, {
+        model: payload.model,
+        maxTokens: 900,
+        temperature: 0.2,
+      });
+    } catch {
+      ai = {
+        provider: 'fallback',
+        model: 'local-summary',
+        text: this.fallbackInsightsText(summary),
+        usage: null,
+        requestId: null,
+      };
+    }
 
     return {
       sheetUrl,
@@ -287,10 +345,7 @@ export class AnalysisService {
   }
 
   async getGoogleSheetData(payload: GoogleSheetAnalysisDto) {
-    const sheetUrl =
-      payload.sheetUrl ||
-      process.env.GOOGLE_SHEET_URL ||
-      'https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing';
+    const sheetUrl = this.resolveSheetUrl(payload.sheetUrl);
     const rows = await this.loadSheetRows(sheetUrl);
     const summary = this.summarizeRows(rows);
     return {
@@ -301,10 +356,7 @@ export class AnalysisService {
   }
 
   async buildStudentReportFromSheet(payload: GoogleSheetAnalysisDto) {
-    const sheetUrl =
-      payload.sheetUrl ||
-      process.env.GOOGLE_SHEET_URL ||
-      'https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing';
+    const sheetUrl = this.resolveSheetUrl(payload.sheetUrl);
     const rows = await this.loadSheetRows(sheetUrl);
     const summary = this.summarizeRows(rows);
 
@@ -320,11 +372,22 @@ export class AnalysisService {
       'Use clear bullet points.',
     ].join('\n');
 
-    const ai = await this.runOpenRouter(prompt, {
-      model: payload.model,
-      maxTokens: 1200,
-      temperature: 0.3,
-    });
+    let ai: Awaited<ReturnType<typeof this.runOpenRouter>>;
+    try {
+      ai = await this.runOpenRouter(prompt, {
+        model: payload.model,
+        maxTokens: 1200,
+        temperature: 0.3,
+      });
+    } catch {
+      ai = {
+        provider: 'fallback',
+        model: 'local-report',
+        text: this.fallbackReportText(summary, reportType),
+        usage: null,
+        requestId: null,
+      };
+    }
 
     return {
       sheetUrl,
@@ -334,10 +397,7 @@ export class AnalysisService {
   }
 
   async analyzeStudentTrendsFromSheet(payload: GoogleSheetAnalysisDto) {
-    const sheetUrl =
-      payload.sheetUrl ||
-      process.env.GOOGLE_SHEET_URL ||
-      'https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing';
+    const sheetUrl = this.resolveSheetUrl(payload.sheetUrl);
     const rows = await this.loadSheetRows(sheetUrl);
     const summary = this.summarizeRows(rows);
 
