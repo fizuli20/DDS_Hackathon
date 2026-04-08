@@ -108,7 +108,7 @@ function useSheetDataset() {
     const run = async () => {
       setLoading(true);
       try {
-        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
         const sheetUrl =
           "https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing";
         const response = await fetch(
@@ -145,7 +145,7 @@ function useSheetTrends() {
     let active = true;
     const run = async () => {
       try {
-        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
         const sheetUrl =
           "https://docs.google.com/spreadsheets/d/1cgPq-M2cGkyElpf9ORcbp4uK-YhuHSODj00aTN9XZzg/edit?usp=sharing";
         const response = await fetch(`${apiBaseUrl}/analysis/google-sheet-trends`, {
@@ -1656,7 +1656,7 @@ export function ReportsScreen() {
     endpoint: "google-sheet" | "google-sheet-report",
     payload?: { reportType?: string },
   ) => {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
     const response = await fetch(`${apiBaseUrl}/analysis/${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
