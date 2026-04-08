@@ -40,7 +40,8 @@ export default function LoginPage() {
     // Placeholder auth flow for hackathon demo with role routing.
     await new Promise((resolve) => setTimeout(resolve, 500));
     const isAdmin =
-      normalizedEmail === "admin@holbertonschool.com" && normalizedPassword === "admin1234";
+      normalizedEmail === "admin@holbertonschool.com" &&
+      normalizedPassword === "8:39@#$%";
 
     if (!isAdmin) {
       let registeredUser:
