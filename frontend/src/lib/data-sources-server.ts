@@ -389,6 +389,13 @@ export async function syncOne(id: string) {
 
 export async function aggregateByCohort(cohort?: string) {
   const store = getStore();
+  if (store.unified.size === 0 && store.sources.some((s) => s.active)) {
+    try {
+      await syncAllActiveInternal(store);
+    } catch {
+      // Sheet/network issue; return zeros so UI still loads
+    }
+  }
   let students = [...store.unified.values()];
   if (cohort?.trim()) {
     const c = cohort.trim().toLowerCase();
