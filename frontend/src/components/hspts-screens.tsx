@@ -1813,8 +1813,8 @@ export function ReportsScreen() {
       `${t("reports.avgOverall", "Average overall")}: ${sheetSummary?.averages.overall ?? "N/A"}`,
       "",
       t("reports.aiReport", "AI Report"),
-      currentGeneratedReport ||
-        t("reports.noAiYet", "No AI report generated yet. Use 'Generate AI student report'."),
+      ...(currentGeneratedReport ||
+        t("reports.noAiYet", "No AI report generated yet. Use 'Generate AI student report'.")).split("\n"),
     ];
     const doc = new jsPDF({ unit: "pt", format: "a4" });
     const left = 40;
