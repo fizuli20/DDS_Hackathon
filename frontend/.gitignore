@@ -5,6 +5,9 @@ dist
 build
 .env
 .env.local
+vercel.env.production.local
+vercel.env.preview.local
 coverage
 *.log
 tsconfig.tsbuildinfo
+.vercel

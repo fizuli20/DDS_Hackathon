@@ -1,16 +1,29 @@
-# Database Setup (PostgreSQL)
+# Database (PostgreSQL on Supabase)
 
-## Structure
-- `db/schema/schema.sql` - full PostgreSQL schema
-- `db/scripts/run-schema.js` - applies schema to database
-- `db/scripts/verify-indexes.js` - checks index creation
+**Məhsul üçün əsas DB:** [Supabase](https://supabase.com) üzərindəki **PostgreSQL**. Lokal Postgres yalnız inkişaf üçün istifadə oluna bilər.
 
-## Connection
-Uses `DATABASE_URL` if present, otherwise defaults to:
+## Struktur
 
-`postgresql://postgres:postgres@localhost:5432/Activity_checker`
+- `db/schema/schema.sql` — köhnə SQL (bütün TypeORM cədvəllərini əhatə etməyə bilər)
+- `db/scripts/run-schema.js` — SQL faylını işlədir (Supabase üçün SSL dəstəyi)
+- `db/scripts/verify-indexes.js` — indekslər
+- `db/scripts/pg-ssl.js` — Supabase host ilə bağlantı üçün TLS
 
-## Commands
-- `npm run db:schema`
+## Əsas quraşdırma (tövsiyə)
+
+1. Supabase-də layihə yarat, **Database → Connection string** (`DATABASE_URL`) götür.
+2. Backend env: `DATABASE_URL`, `ENABLE_DB=true`, `TYPEORM_SYNC=true` (ilk dəfə boş DB üçün).
+3. NestJS-i işə sal — TypeORM entity-lərindən cədvəllər yaranır.
+
+Tam təlimat: **[SUPABASE.md](../../SUPABASE.md)** (repo kökü).
+
+## Əmrlər
+
+- `npm run db:schema` — `schema.sql` işlədir (Supabase üçün `DATABASE_URL` təyin et)
 - `npm run db:verify`
 
+## Əlaqə
+
+Əvvəlki default (lokal): `postgresql://postgres:postgres@localhost:5432/Activity_checker`  
+
+İndi **production** üçün `DATABASE_URL` həmişə Supabase URI olmalıdır.

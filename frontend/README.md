@@ -3,6 +3,10 @@
 A standalone Next.js frontend for the Data Driven Solutions hackathon.  
 This project presents a modern, high-contrast education analytics dashboard for Holberton School with strong risk visualization, responsive data screens, and motion-driven UX.
 
+## Data & API
+
+- Tətbiq məlumatını **birbaşa Supabase-dən oxumur**; backend **NestJS** TypeORM ilə **Supabase Postgres**-ə qoşulur. Təfərrüat: repo kökündə **[SUPABASE.md](../SUPABASE.md)**.
+
 ## Stack
 
 - Next.js 15

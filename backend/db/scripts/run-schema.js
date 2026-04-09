@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
+const { getPgSsl } = require('./pg-ssl');
 
 async function main() {
   const connectionString =
@@ -9,7 +10,7 @@ async function main() {
   const sqlPath = path.join(__dirname, '..', 'schema', 'schema.sql');
   const sql = fs.readFileSync(sqlPath, 'utf8');
 
-  const client = new Client({ connectionString });
+  const client = new Client({ connectionString, ssl: getPgSsl(connectionString) });
   await client.connect();
   try {
     await client.query(sql);

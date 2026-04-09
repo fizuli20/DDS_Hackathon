@@ -1,10 +1,13 @@
 const { Client } = require('pg');
+const { getPgSsl } = require('./pg-ssl');
 
 async function main() {
+  const connectionString =
+    process.env.DATABASE_URL ||
+    'postgresql://postgres:postgres@localhost:5432/Activity_checker';
   const client = new Client({
-    connectionString:
-      process.env.DATABASE_URL ||
-      'postgresql://postgres:postgres@localhost:5432/Activity_checker',
+    connectionString,
+    ssl: getPgSsl(connectionString),
   });
   await client.connect();
   try {
