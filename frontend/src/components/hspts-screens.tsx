@@ -1803,7 +1803,23 @@ export function ReportsScreen() {
 
   const currentGeneratedReport = generatedReports[selected] || aiReport;
 
-  const handlePdfExport = (preset: { id: string; title: string }) => {
+  const handlePdfExport = async (preset: { id: string; title: string }) => {
+    let reportText = generatedReports[preset.id] || aiReport;
+    
+    if (!reportText) {
+      setLoadingReport(true);
+      try {
+        const data = await callAi("google-sheet-report", { reportType: preset.id });
+        reportText = data.report?.text || "";
+        setGeneratedReports((prev) => ({ ...prev, [preset.id]: reportText }));
+        setAiReport(reportText);
+      } catch (err) {
+        reportText = t("reports.aiReportFailed", "AI report generation failed.");
+      } finally {
+        setLoadingReport(false);
+      }
+    }
+
     const lines = [
       `HSPTS Report: ${preset.title}`,
       `Date: ${nowLabel}`,
@@ -1813,8 +1829,7 @@ export function ReportsScreen() {
       `${t("reports.avgOverall", "Average overall")}: ${sheetSummary?.averages.overall ?? "N/A"}`,
       "",
       t("reports.aiReport", "AI Report"),
-      ...(currentGeneratedReport ||
-        t("reports.noAiYet", "No AI report generated yet. Use 'Generate AI student report'.")).split("\n"),
+      ...(reportText || t("reports.noAiYet", "No AI report generated yet.")).split("\n"),
     ];
     const doc = new jsPDF({ unit: "pt", format: "a4" });
     const left = 40;
