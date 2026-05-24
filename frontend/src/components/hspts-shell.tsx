@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Bell,
+  DollarSign,
   FileText,
   LayoutDashboard,
   Menu,
@@ -28,6 +29,7 @@ import {
 
 const navigation = [
   { href: "/admin", labelKey: "nav.overview", fallback: "Overview", icon: LayoutDashboard },
+  { href: "/business-impact", labelKey: "nav.businessImpact", fallback: "Business Impact", icon: DollarSign },
   { href: "/admin/audit", labelKey: "nav.auditLog", fallback: "Audit log", icon: ScrollText },
   { href: "/students", labelKey: "nav.students", fallback: "Students", icon: Users },
   { href: "/students/hspts-1004", labelKey: "nav.studentProfile", fallback: "Student Profile", icon: Sparkles },
