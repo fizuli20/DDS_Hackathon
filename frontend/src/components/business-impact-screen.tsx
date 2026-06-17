@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   AlertTriangle,
-  ArrowUpRight,
   BarChart3,
   Building2,
   GraduationCap,
@@ -16,7 +15,6 @@ import {
   Users,
   Zap,
   ShieldAlert,
-  BookOpen,
   Award,
 } from "lucide-react";
 import {
@@ -35,7 +33,6 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/lib/i18n";
 import { DEFAULT_GOOGLE_SHEET_URL } from "@/lib/sheet-config";
 import { useAtRiskStudents } from "@/hooks/useAtRiskStudents";
 
@@ -210,7 +207,6 @@ function KpiCard({ title, value, subtitle, accent, icon }: {
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════════════════ */
 export function BusinessImpactScreen() {
-  const { t } = useI18n();
   const { summary: sheetSummary, loading: sheetLoading } = useSheetDataset();
   const { riskCounts: mockRisk, campusStats, atRiskStudents, dangerCount } = useAtRiskStudents();
 

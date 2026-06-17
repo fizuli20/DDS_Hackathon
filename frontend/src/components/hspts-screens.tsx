@@ -1813,7 +1813,7 @@ export function ReportsScreen() {
         reportText = data.report?.text || "";
         setGeneratedReports((prev) => ({ ...prev, [preset.id]: reportText }));
         setAiReport(reportText);
-      } catch (err) {
+      } catch {
         reportText = t("reports.aiReportFailed", "AI report generation failed.");
       } finally {
         setLoadingReport(false);

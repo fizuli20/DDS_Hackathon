@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bell,
   DollarSign,
@@ -23,6 +23,7 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import {
   clearAuth,
   getStoredAuthUser,
+  getStoredToken,
   isAdminLikeRole,
   USE_AUTH_API,
 } from "@/lib/auth-client";
@@ -128,24 +129,38 @@ export function HsptsShell({
     }
   };
 
-  useEffect(() => {
+  const readAuthState = useCallback(() => {
     try {
-      setIsLoggedIn(getSessionValue("hspts_auth") === "true");
+      const loggedIn = getSessionValue("hspts_auth") === "true";
       if (USE_AUTH_API) {
         const u = getStoredAuthUser();
-        setUserRole(isAdminLikeRole(u?.role ?? "") ? "admin" : "user");
-      } else {
-        setUserRole(getSessionValue("hspts_user_role") === "admin" ? "admin" : "user");
+        return {
+          isLoggedIn: loggedIn && Boolean(getStoredToken()),
+          userRole: isAdminLikeRole(u?.role ?? "") ? "admin" as const : "user" as const,
+        };
       }
+      return {
+        isLoggedIn: loggedIn,
+        userRole: getSessionValue("hspts_user_role") === "admin" ? "admin" as const : "user" as const,
+      };
+    } catch {
+      return { isLoggedIn: false, userRole: "user" as const };
+    }
+  }, []);
+
+  useEffect(() => {
+    const nextAuth = readAuthState();
+    setIsLoggedIn(nextAuth.isLoggedIn);
+    setUserRole(nextAuth.userRole);
+    try {
       localStorage.removeItem("hspts_auth");
       localStorage.removeItem("hspts_user_email");
       localStorage.removeItem("hspts_user_role");
     } catch {
-      setIsLoggedIn(false);
-      setUserRole("user");
+      // Ignore storage access issues in restricted browsers.
     }
     setAuthChecked(true);
-  }, [pathname]);
+  }, [pathname, readAuthState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -183,20 +198,27 @@ export function HsptsShell({
     if (!authChecked || isAuthRoute) {
       return;
     }
-    if (!isLoggedIn) {
+    const nextAuth = readAuthState();
+    if (nextAuth.isLoggedIn !== isLoggedIn) {
+      setIsLoggedIn(nextAuth.isLoggedIn);
+    }
+    if (nextAuth.userRole !== userRole) {
+      setUserRole(nextAuth.userRole);
+    }
+    if (!nextAuth.isLoggedIn) {
       router.replace("/login");
       return;
     }
 
-    if (userRole === "user" && pathname !== "/student-portal") {
+    if (nextAuth.userRole === "user" && pathname !== "/student-portal") {
       router.replace("/student-portal");
       return;
     }
 
-    if (userRole === "admin" && isStudentPortalRoute) {
+    if (nextAuth.userRole === "admin" && isStudentPortalRoute) {
       router.replace("/admin");
     }
-  }, [authChecked, isAuthRoute, isLoggedIn, isStudentPortalRoute, pathname, router, userRole]);
+  }, [authChecked, isAuthRoute, isLoggedIn, isStudentPortalRoute, pathname, readAuthState, router, userRole]);
 
   if (isAuthRoute) {
     return (

@@ -43,7 +43,7 @@ export default function LoginPage() {
       if (USE_AUTH_API) {
         const data = await apiLogin(normalizedEmail, normalizedPassword);
         setSessionFromLogin(data.access_token, data.user);
-        router.push(isAdminLikeRole(data.user.role) ? "/admin" : "/student-portal");
+        router.replace(isAdminLikeRole(data.user.role) ? "/admin" : "/student-portal");
         return;
       }
 
@@ -90,7 +90,7 @@ export default function LoginPage() {
       } catch {
         // Ignore storage access issues in restricted browsers.
       }
-      router.push(isAdmin ? "/admin" : "/student-portal");
+      router.replace(isAdmin ? "/admin" : "/student-portal");
     } finally {
       setIsSubmitting(false);
     }

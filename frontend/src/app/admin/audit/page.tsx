@@ -66,7 +66,7 @@ export default function AdminAuditPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-10 pt-4 sm:px-0">

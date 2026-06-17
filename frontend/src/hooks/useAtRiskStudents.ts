@@ -5,7 +5,7 @@ import {
   mockAtRiskStudents,
   mockCampusStats,
 } from "../lib/mock-students";
-import type { StudentRecord, RiskLevel } from "../lib/hspts-data";
+import type { StudentRecord } from "../lib/hspts-data";
 
 export type RiskStats = {
   atRisk: number;
